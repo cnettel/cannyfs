@@ -1,7 +1,11 @@
 /*
-  CannyFS, getting high file system performance by a "can do" attitude.
+  cannyfs, getting high file system performance by a "can do" attitude.
   Intended for batch-based processing where "rm -rf" on all outputs
   and rerun is a real option.
+
+  Copyright (C) 2016       Carl Nettelblad <carl.nettelblad@it.uu.se>
+
+  Based on fusexmp_fh.c example, notices below.
 
   FUSE: Filesystem in Userspace
   Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
@@ -14,14 +18,14 @@
 /** @file
  * @tableofcontents
  *
- * fusexmp_fh.c - FUSE: Filesystem in Userspace
+ * cannyfs.cpp - FUSE: Filesystem in Userspace
  *
  * \section section_compile compiling this example
  *
- * g++ -Wall cannyfs.cpp `pkg-config fuse3 --cflags --libs` -lulockmgr -o fusexmp_fh
+ * g++ -Wall cannyfs.cpp `pkg-config fuse3 --cflags --libs` -lulockmgr -o cannyfs
  *
  * \section section_source the complete source
- * \include fusexmp_fh.c
+ * \include cannyfs.cpp
  */
 
 #define FUSE_USE_VERSION 30
@@ -52,8 +56,217 @@
 #endif
 #include <sys/file.h> /* flock(2) */
 
-static int xmp_getattr(const char *path, struct stat *stbuf)
+
+#include <atomic>
+#include <thread>
+#include <shared_mutex>
+#include <mutex>
+#include <condition_variable>
+#include <map>
+#include <set>
+#include <string>
+#include <functional>
+#include <queue>
+using namespace std;
+
+struct cannyfs_filedata
 {
+	mutex lock;
+	long long lastEventId = 0;
+
+	// Kill it if we don't have any ops.
+	// TODO: What if file is closed with close list?
+	// long long numOps;
+	condition_variable processed;
+};
+
+struct cannyfs_options
+{
+	bool eagerlink = true;
+	bool eagerchmod = true;
+	bool veryeageraccess = true;
+	bool eageraccess = true;
+	bool eagerutimens = true;
+	bool eagerchown = true;
+	bool eagerclose = true;
+	bool closeverylate = true;
+	bool restrictivedirs = false;
+	bool eagerfsync = true;
+	bool ignorefsync = true;
+} options;
+
+
+const int JUST_BARRIER = 0;
+const int LOCK_WHOLE = 1;
+
+struct cannyfs_filemap
+{
+private:
+	map<string, cannyfs_filedata> data;
+	shared_mutex lock;
+public:
+	cannyfs_filedata* get(std::string path, bool always, unique_lock<mutex>& lock)
+	{
+		cannyfs_filedata* result = nullptr;
+		{
+			shared_lock<shared_mutex> maplock(this->lock);
+			auto i = data.find(path);
+			if (i != data.end())
+			{
+				result = &i->second;
+				lock = unique_lock<mutex>(result->lock);
+			}
+		}
+
+		if (always && !result)
+		{
+			unique_lock<shared_mutex> maplock(this->lock);
+			auto i = data.find(path);
+			if (i != data.end())
+			{
+				result = &i->second;
+			}
+			else
+			{
+				result = &data[path];
+			}
+			lock = unique_lock<mutex>(result->lock);
+		}
+
+		return result;
+	}
+} filemap;
+
+set<long long> waitingEvents;
+
+int getfh(const fuse_file_info* fi)
+{
+	return fi->fh;
+}
+
+struct cannyfs_reader
+{
+private:
+	unique_lock<mutex> lock;
+public:
+	cannyfs_filedata* fileobj;
+	cannyfs_reader(std::string path, int flag)
+	{
+		unique_lock<mutex> locallock;
+		fileobj = filemap.get(path, flag == LOCK_WHOLE, locallock);
+
+		if (fileobj)
+		{
+			long long eventId = fileobj->lastEventId;
+			while (waitingEvents.find(eventId) != waitingEvents.end())
+			{
+				fileobj->processed.wait(locallock);
+			}
+		}
+
+		if (flag == LOCK_WHOLE)
+		{
+			swap(lock, locallock);
+		}
+	}
+};
+
+struct cannyfs_writer
+{
+private:
+	unique_lock<mutex> lock;
+	cannyfs_filedata* fileobj;
+	cannyfs_writer* generalwriter;
+	long long eventId;
+	bool global;
+public:
+	cannyfs_writer(std::string path, int flag, long long eventId) : eventId(eventId), global(path != "")
+	{
+		generalwriter = nullptr;
+		if (global) waitingEvents.insert(eventId);
+		fileobj = filemap.get(path, true, lock);
+
+		fileobj->lastEventId = eventId;
+
+		if (flag != LOCK_WHOLE)
+		{
+			lock.release();
+		}
+
+		if (!global && options.restrictivedirs) generalwriter = new cannyfs_writer("", JUST_BARRIER, eventId);
+	}
+
+	~cannyfs_writer()
+	{
+		if (!global) waitingEvents.erase(eventId);
+		if (!lock.owns_lock()) lock.lock();
+
+		fileobj->processed.notify_all();
+		if (generalwriter) delete generalwriter;
+	}
+};
+
+atomic_llong eventId(0);
+
+struct cannyfs_dirreader : cannyfs_reader
+{
+private:
+public:
+	cannyfs_dirreader() = delete;
+	cannyfs_dirreader(std::string path, int flag) :
+		cannyfs_reader(options.restrictivedirs ? "" : path, flag)
+	{
+	}
+};
+
+queue<function<int()> > workQueue;
+
+int cannyfs_add_write(bool defer, function<int(int)> fun)
+{
+	long long eventIdNow = ++::eventId;
+	if (!defer)
+	{
+		return fun(eventIdNow);
+	}
+	else
+	{
+		workQueue.emplace([eventIdNow, fun]() { return fun(eventIdNow); });
+		return 0;
+	}
+}
+
+int cannyfs_add_write(bool defer, std::string path, function<int(string)> fun)
+{
+	return cannyfs_add_write(defer, [path, fun](int eventId)->int {
+		cannyfs_writer writer(path, LOCK_WHOLE, eventId);
+		return fun(path);
+	});
+}
+
+int cannyfs_add_write(bool defer, std::string path, fuse_file_info* origfi, function<int(string, const fuse_file_info*)> fun)
+{
+	fuse_file_info fi = *origfi;
+	return cannyfs_add_write(defer, [path, fun, fi](int eventId)->int {
+		cannyfs_writer writer(path, LOCK_WHOLE, eventId);
+		return fun(path, &fi);
+	});
+}
+
+int cannyfs_add_write(bool defer, std::string path1, std::string path2, function<int(string, string)> fun)
+{
+	return cannyfs_add_write(defer, [path1, path2, fun](int eventId)->int {
+		cannyfs_writer writer1(path1, LOCK_WHOLE, eventId);
+		cannyfs_writer writer2(path2, LOCK_WHOLE, eventId);
+
+		return fun(path1, path2);
+	});
+}
+
+
+static int cannyfs_getattr(const char *path, struct stat *stbuf)
+{
+	cannyfs_reader b(path, JUST_BARRIER);
+
 	int res;
 
 	res = lstat(path, stbuf);
@@ -63,9 +276,11 @@ static int xmp_getattr(const char *path, struct stat *stbuf)
 	return 0;
 }
 
-static int xmp_fgetattr(const char *path, struct stat *stbuf,
+static int cannyfs_fgetattr(const char *path, struct stat *stbuf,
 			struct fuse_file_info *fi)
 {
+	cannyfs_reader b(path, JUST_BARRIER);
+
 	int res;
 
 	(void) path;
@@ -77,8 +292,15 @@ static int xmp_fgetattr(const char *path, struct stat *stbuf,
 	return 0;
 }
 
-static int xmp_access(const char *path, int mask)
+static int cannyfs_access(const char *path, int mask)
 {
+	if (options.veryeageraccess) return 0;
+
+	// At least make the writes finish?
+	cannyfs_reader b(path, JUST_BARRIER);
+
+	if (options.eageraccess) return 0;
+
 	int res;
 
 	res = access(path, mask);
@@ -88,8 +310,10 @@ static int xmp_access(const char *path, int mask)
 	return 0;
 }
 
-static int xmp_readlink(const char *path, char *buf, size_t size)
+static int cannyfs_readlink(const char *path, char *buf, size_t size)
 {
+	cannyfs_reader b(path, JUST_BARRIER);
+
 	int res;
 
 	res = readlink(path, buf, size - 1);
@@ -100,16 +324,19 @@ static int xmp_readlink(const char *path, char *buf, size_t size)
 	return 0;
 }
 
-struct xmp_dirp {
+struct cannyfs_dirp {
 	DIR *dp;
 	struct dirent *entry;
 	off_t offset;
 };
 
-static int xmp_opendir(const char *path, struct fuse_file_info *fi)
+static int cannyfs_opendir(const char *path, struct fuse_file_info *fi)
 {
+	// With accurate dirs, ALL operations need to finish
+	cannyfs_dirreader b(path, JUST_BARRIER);
+
 	int res;
-	struct xmp_dirp *d = malloc(sizeof(struct xmp_dirp));
+	cannyfs_dirp* d = new cannyfs_dirp;
 	if (d == NULL)
 		return -ENOMEM;
 
@@ -126,16 +353,18 @@ static int xmp_opendir(const char *path, struct fuse_file_info *fi)
 	return 0;
 }
 
-static inline struct xmp_dirp *get_dirp(struct fuse_file_info *fi)
+static inline struct cannyfs_dirp *get_dirp(struct fuse_file_info *fi)
 {
-	return (struct xmp_dirp *) (uintptr_t) fi->fh;
+	return (struct cannyfs_dirp *) (uintptr_t) fi->fh;
 }
 
-static int xmp_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
+static int cannyfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 		       off_t offset, struct fuse_file_info *fi,
 		       enum fuse_readdir_flags flags)
 {
-	struct xmp_dirp *d = get_dirp(fi);
+	cannyfs_dirreader b(path, JUST_BARRIER);
+
+	struct cannyfs_dirp *d = get_dirp(fi);
 
 	(void) path;
 	if (offset != d->offset) {
@@ -179,16 +408,16 @@ static int xmp_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	return 0;
 }
 
-static int xmp_releasedir(const char *path, struct fuse_file_info *fi)
+static int cannyfs_releasedir(const char *path, struct fuse_file_info *fi)
 {
-	struct xmp_dirp *d = get_dirp(fi);
+	struct cannyfs_dirp *d = get_dirp(fi);
 	(void) path;
 	closedir(d->dp);
 	free(d);
 	return 0;
 }
 
-static int xmp_mknod(const char *path, mode_t mode, dev_t rdev)
+static int cannyfs_mknod(const char *path, mode_t mode, dev_t rdev)
 {
 	int res;
 
@@ -202,7 +431,7 @@ static int xmp_mknod(const char *path, mode_t mode, dev_t rdev)
 	return 0;
 }
 
-static int xmp_mkdir(const char *path, mode_t mode)
+static int cannyfs_mkdir(const char *path, mode_t mode)
 {
 	int res;
 
@@ -213,8 +442,11 @@ static int xmp_mkdir(const char *path, mode_t mode)
 	return 0;
 }
 
-static int xmp_unlink(const char *path)
+static int cannyfs_unlink(const char *path)
 {
+	// We should KILL all pending IOs, not let them go through to some corpse. Or, well,
+	// we should have a flag to do that.
+	// TODO: cannyfs_clear(path);
 	int res;
 
 	res = unlink(path);
@@ -224,7 +456,7 @@ static int xmp_unlink(const char *path)
 	return 0;
 }
 
-static int xmp_rmdir(const char *path)
+static int cannyfs_rmdir(const char *path)
 {
 	int res;
 
@@ -235,8 +467,9 @@ static int xmp_rmdir(const char *path)
 	return 0;
 }
 
-static int xmp_symlink(const char *from, const char *to)
+static int cannyfs_symlink(const char *from, const char *to)
 {
+	// TODO: Barrier here?
 	int res;
 
 	res = symlink(from, to);
@@ -246,8 +479,10 @@ static int xmp_symlink(const char *from, const char *to)
 	return 0;
 }
 
-static int xmp_rename(const char *from, const char *to, unsigned int flags)
+static int cannyfs_rename(const char *from, const char *to, unsigned int flags)
 {
+	// TODO: I/O logic at rename, what will the names be
+	cannyfs_reader b(from, LOCK_WHOLE);
 	int res;
 
 	/* When we have renameat2() in libc, then we can implement flags */
@@ -261,41 +496,47 @@ static int xmp_rename(const char *from, const char *to, unsigned int flags)
 	return 0;
 }
 
-static int xmp_link(const char *from, const char *to)
+static int cannyfs_link(const char *cfrom, const char *cto)
 {
-	int res;
+	return cannyfs_add_write(options.eagerlink, cfrom, cto, [](std::string from, std::string to) {
+		int res;
 
-	res = link(from, to);
-	if (res == -1)
-		return -errno;
+		res = link(from.c_str(), to.c_str());
+		if (res == -1)
+			return -errno;
 
-	return 0;
+		return 0;
+	});
 }
 
-static int xmp_chmod(const char *path, mode_t mode)
+static int cannyfs_chmod(const char *cpath, mode_t mode)
 {
-	int res;
+	return cannyfs_add_write(options.eagerchmod, cpath, [mode](std::string path) {
+		int res;
+		res = chmod(path.c_str(), mode);
+		if (res == -1)
+			return -errno;
 
-	res = chmod(path, mode);
-	if (res == -1)
-		return -errno;
-
-	return 0;
+		return 0;
+	});
 }
 
-static int xmp_chown(const char *path, uid_t uid, gid_t gid)
+static int cannyfs_chown(const char *cpath, uid_t uid, gid_t gid)
 {
-	int res;
+	return cannyfs_add_write(options.eagerchown, cpath, [uid, gid](std::string path) {
+		int res;
 
-	res = lchown(path, uid, gid);
-	if (res == -1)
-		return -errno;
+		res = lchown(path.c_str(), uid, gid);
+		if (res == -1)
+			return -errno;
 
-	return 0;
+		return 0;
+	});
 }
 
-static int xmp_truncate(const char *path, off_t size)
+static int cannyfs_truncate(const char *path, off_t size)
 {
+	// TODO: FUN STUFF COULD BE DONE HERE TO AVOID WRITES
 	int res;
 
 	res = truncate(path, size);
@@ -305,9 +546,10 @@ static int xmp_truncate(const char *path, off_t size)
 	return 0;
 }
 
-static int xmp_ftruncate(const char *path, off_t size,
+static int cannyfs_ftruncate(const char *path, off_t size,
 			 struct fuse_file_info *fi)
 {
+	// TODO: FUN STUFF COULD BE DONE HERE TO AVOID WRITES
 	int res;
 
 	(void) path;
@@ -320,20 +562,22 @@ static int xmp_ftruncate(const char *path, off_t size,
 }
 
 #ifdef HAVE_UTIMENSAT
-static int xmp_utimens(const char *path, const struct timespec ts[2])
+static int cannyfs_utimens(const char *cpath, const struct timespec ts[2])
 {
-	int res;
+	return cannyfs_add_write(options.eagerutimens, cpath, [ts](std::string path) {
+		int res;
 
-	/* don't use utime/utimes since they follow symlinks */
-	res = utimensat(0, path, ts, AT_SYMLINK_NOFOLLOW);
-	if (res == -1)
-		return -errno;
+		/* don't use utime/utimes since they follow symlinks */
+		res = utimensat(0, path, ts, AT_SYMLINK_NOFOLLOW);
+		if (res == -1)
+			return -errno;
 
-	return 0;
+		return 0;
+	});
 }
 #endif
 
-static int xmp_create(const char *path, mode_t mode, struct fuse_file_info *fi)
+static int cannyfs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
 	int fd;
 
@@ -345,7 +589,7 @@ static int xmp_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 	return 0;
 }
 
-static int xmp_open(const char *path, struct fuse_file_info *fi)
+static int cannyfs_open(const char *path, struct fuse_file_info *fi)
 {
 	int fd;
 
@@ -357,7 +601,7 @@ static int xmp_open(const char *path, struct fuse_file_info *fi)
 	return 0;
 }
 
-static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
+static int cannyfs_read(const char *path, char *buf, size_t size, off_t offset,
 		    struct fuse_file_info *fi)
 {
 	int res;
@@ -370,20 +614,20 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 	return res;
 }
 
-static int xmp_read_buf(const char *path, struct fuse_bufvec **bufp,
+static int cannyfs_read_buf(const char *path, struct fuse_bufvec **bufp,
 			size_t size, off_t offset, struct fuse_file_info *fi)
 {
 	struct fuse_bufvec *src;
 
 	(void) path;
 
-	src = malloc(sizeof(struct fuse_bufvec));
+	src = new fuse_bufvec;
 	if (src == NULL)
 		return -ENOMEM;
 
 	*src = FUSE_BUFVEC_INIT(size);
 
-	src->buf[0].flags = FUSE_BUF_IS_FD | FUSE_BUF_FD_SEEK;
+	src->buf[0].flags = (fuse_buf_flags) (FUSE_BUF_IS_FD | FUSE_BUF_FD_SEEK);
 	src->buf[0].fd = fi->fh;
 	src->buf[0].pos = offset;
 
@@ -392,9 +636,11 @@ static int xmp_read_buf(const char *path, struct fuse_bufvec **bufp,
 	return 0;
 }
 
-static int xmp_write(const char *path, const char *buf, size_t size,
+static int cannyfs_write(const char *path, const char *buf, size_t size,
 		     off_t offset, struct fuse_file_info *fi)
 {
+	// TODO, NO WRITE, JUST WRITE_BUF???
+	abort();
 	int res;
 
 	(void) path;
@@ -405,9 +651,13 @@ static int xmp_write(const char *path, const char *buf, size_t size,
 	return res;
 }
 
-static int xmp_write_buf(const char *path, struct fuse_bufvec *buf,
+static int cannyfs_write_buf(const char *path, struct fuse_bufvec *buf,
 		     off_t offset, struct fuse_file_info *fi)
 {
+	int res = copy_to_pipe(buf);
+	if (res) return res;
+
+
 	struct fuse_bufvec dst = FUSE_BUFVEC_INIT(fuse_buf_size(buf));
 
 	(void) path;
@@ -419,8 +669,9 @@ static int xmp_write_buf(const char *path, struct fuse_bufvec *buf,
 	return fuse_buf_copy(&dst, buf, FUSE_BUF_SPLICE_NONBLOCK);
 }
 
-static int xmp_statfs(const char *path, struct statvfs *stbuf)
+static int cannyfs_statfs(const char *path, struct statvfs *stbuf)
 {
+	cannyfs_reader b(path, JUST_BARRIER);
 	int res;
 
 	res = statvfs(path, stbuf);
@@ -430,94 +681,119 @@ static int xmp_statfs(const char *path, struct statvfs *stbuf)
 	return 0;
 }
 
-static int xmp_flush(const char *path, struct fuse_file_info *fi)
+static int cannyfs_flush(const char *cpath, struct fuse_file_info *fi)
 {
-	int res;
+	if (options.closeverylate)
+	{
+		closes.push_back(dup(getfh(fi)));
+		return 0;
+	}
 
-	(void) path;
-	/* This is called from every close on an open file, so call the
-	   close on the underlying filesystem.	But since flush may be
-	   called multiple times for an open file, this must not really
-	   close the file.  This is important if used on a network
-	   filesystem like NFS which flush the data/metadata on close() */
-	res = close(dup(fi->fh));
-	if (res == -1)
-		return -errno;
+	return cannyfs_add_write(options.eagerclose, cpath, fi, [](std::string path, const fuse_file_info *fi) {
+		int res;
+
+		/* This is called from every close on an open file, so call the
+		   close on the underlying filesystem.	But since flush may be
+		   called multiple times for an open file, this must not really
+		   close the file.  This is important if used on a network
+		   filesystem like NFS which flush the data/metadata on close() */
+		res = close(dup(getfh(fi)));
+		if (res == -1)
+			return -errno;
+
+		return 0;
+	});
+}
+
+static int cannyfs_release(const char *cpath, struct fuse_file_info *fi)
+{
+	if (options.closeverylate)
+	{
+		closes.push_back(getfh(fi));
+	}
+
+	return cannyfs_add_write(options.eagerclose, cpath, fi, [](std::string path, const fuse_file_info *fi) {
+		return close(getfh(fi));
+	});
 
 	return 0;
 }
 
-static int xmp_release(const char *path, struct fuse_file_info *fi)
-{
-	(void) path;
-	close(fi->fh);
-
-	return 0;
-}
-
-static int xmp_fsync(const char *path, int isdatasync,
+static int cannyfs_fsync(const char *cpath, int isdatasync,
 		     struct fuse_file_info *fi)
 {
-	int res;
-	(void) path;
+	if (options.ignorefsync) return 0;
+
+	return cannyfs_add_write(options.eagerfsync, cpath, fi, [isdatasync](std::string path, const fuse_file_info *fi) {
+		int res;
+		(void)path;
 
 #ifndef HAVE_FDATASYNC
-	(void) isdatasync;
+		(void) isdatasync;
 #else
-	if (isdatasync)
-		res = fdatasync(fi->fh);
-	else
+		if (isdatasync)
+			res = fdatasync(getfh(fi));
+		else
 #endif
-		res = fsync(fi->fh);
-	if (res == -1)
-		return -errno;
+			res = fsync(getfh(fi));
+		if (res == -1)
+			return -errno;
 
-	return 0;
+		return 0;
+	});
 }
 
 #ifdef HAVE_POSIX_FALLOCATE
-static int xmp_fallocate(const char *path, int mode,
+static int cannyfs_fallocate(const char *cpath, int mode,
 			off_t offset, off_t length, struct fuse_file_info *fi)
 {
-	(void) path;
-
 	if (mode)
 		return -EOPNOTSUPP;
 
-	return -posix_fallocate(fi->fh, offset, length);
+	return cannyfs_add_write(options.eagerchown, cpath, fi, [mode, offset, length](std::string path, struct fuse_file_info *fi) {
+		return -posix_fallocate(getfh(fi), offset, length);
+	}
 }
 #endif
 
 #ifdef HAVE_SETXATTR
 /* xattr operations are optional and can safely be left unimplemented */
-static int xmp_setxattr(const char *path, const char *name, const char *value,
+static int cannyfs_setxattr(const char *path, const char *name, const char *value,
 			size_t size, int flags)
 {
+	cannyfs_immediatewriter b(path, JUST_BARRIER);
+
 	int res = lsetxattr(path, name, value, size, flags);
 	if (res == -1)
 		return -errno;
 	return 0;
 }
 
-static int xmp_getxattr(const char *path, const char *name, char *value,
+static int cannyfs_getxattr(const char *path, const char *name, char *value,
 			size_t size)
 {
+	cannyfs_reader b(path, JUST_BARRIER);
+
 	int res = lgetxattr(path, name, value, size);
 	if (res == -1)
 		return -errno;
 	return res;
 }
 
-static int xmp_listxattr(const char *path, char *list, size_t size)
+static int cannyfs_listxattr(const char *path, char *list, size_t size)
 {
+	cannyfs_reader b(path, JUST_BARRIER);
+
 	int res = llistxattr(path, list, size);
 	if (res == -1)
 		return -errno;
 	return res;
 }
 
-static int xmp_removexattr(const char *path, const char *name)
+static int cannyfs_removexattr(const char *path, const char *name)
 {
+	cannyfs_immediatewriter b(path, JUST_BARRIER);
+
 	int res = lremovexattr(path, name);
 	if (res == -1)
 		return -errno;
@@ -526,77 +802,78 @@ static int xmp_removexattr(const char *path, const char *name)
 #endif /* HAVE_SETXATTR */
 
 #ifdef HAVE_LIBULOCKMGR
-static int xmp_lock(const char *path, struct fuse_file_info *fi, int cmd,
+static int cannyfs_lock(const char *path, struct fuse_file_info *fi, int cmd,
 		    struct flock *lock)
 {
-	(void) path;
+	cannyfs_immediatewriter b(path, JUST_BARRIER);
 
-	return ulockmgr_op(fi->fh, cmd, lock, &fi->lock_owner,
+	return ulockmgr_op(getfh(fi), cmd, lock, &fi->lock_owner,
 			   sizeof(fi->lock_owner));
 }
 #endif
 
-static int xmp_flock(const char *path, struct fuse_file_info *fi, int op)
+static int cannyfs_flock(const char *path, struct fuse_file_info *fi, int op)
 {
+	// TODO: cannyfs_immediatewriter INSTEAD
+	cannyfs_reader b(path, JUST_BARRIER);
 	int res;
-	(void) path;
 
-	res = flock(fi->fh, op);
+	res = flock(getfh(fi), op);
 	if (res == -1)
 		return -errno;
 
 	return 0;
 }
 
-static struct fuse_operations xmp_oper = {
-	.getattr	= xmp_getattr,
-	.fgetattr	= xmp_fgetattr,
-	.access		= xmp_access,
-	.readlink	= xmp_readlink,
-	.opendir	= xmp_opendir,
-	.readdir	= xmp_readdir,
-	.releasedir	= xmp_releasedir,
-	.mknod		= xmp_mknod,
-	.mkdir		= xmp_mkdir,
-	.symlink	= xmp_symlink,
-	.unlink		= xmp_unlink,
-	.rmdir		= xmp_rmdir,
-	.rename		= xmp_rename,
-	.link		= xmp_link,
-	.chmod		= xmp_chmod,
-	.chown		= xmp_chown,
-	.truncate	= xmp_truncate,
-	.ftruncate	= xmp_ftruncate,
+static struct fuse_operations cannyfs_oper = {
+	.getattr	= cannyfs_getattr,
+	.fgetattr	= cannyfs_fgetattr,
+	.access		= cannyfs_access,
+	.readlink	= cannyfs_readlink,
+	.opendir	= cannyfs_opendir,
+	.readdir	= cannyfs_readdir,
+	.releasedir	= cannyfs_releasedir,
+	.mknod		= cannyfs_mknod,
+	.mkdir		= cannyfs_mkdir,
+	.symlink	= cannyfs_symlink,
+	.unlink		= cannyfs_unlink,
+	.rmdir		= cannyfs_rmdir,
+	.rename		= cannyfs_rename,
+	.link		= cannyfs_link,
+	.chmod		= cannyfs_chmod,
+	.chown		= cannyfs_chown,
+	.truncate	= cannyfs_truncate,
+	.ftruncate	= cannyfs_ftruncate,
 #ifdef HAVE_UTIMENSAT
-	.utimens	= xmp_utimens,
+	.utimens	= cannyfs_utimens,
 #endif
-	.create		= xmp_create,
-	.open		= xmp_open,
-	.read		= xmp_read,
-	.read_buf	= xmp_read_buf,
-	.write		= xmp_write,
-	.write_buf	= xmp_write_buf,
-	.statfs		= xmp_statfs,
-	.flush		= xmp_flush,
-	.release	= xmp_release,
-	.fsync		= xmp_fsync,
+	.create		= cannyfs_create,
+	.open		= cannyfs_open,
+	.read		= cannyfs_read,
+	.read_buf	= cannyfs_read_buf,
+	.write		= cannyfs_write,
+	.write_buf	= cannyfs_write_buf,
+	.statfs		= cannyfs_statfs,
+	.flush		= cannyfs_flush,
+	.release	= cannyfs_release,
+	.fsync		= cannyfs_fsync,
 #ifdef HAVE_POSIX_FALLOCATE
-	.fallocate	= xmp_fallocate,
+	.fallocate	= cannyfs_fallocate,
 #endif
 #ifdef HAVE_SETXATTR
-	.setxattr	= xmp_setxattr,
-	.getxattr	= xmp_getxattr,
-	.listxattr	= xmp_listxattr,
-	.removexattr	= xmp_removexattr,
+	.setxattr	= cannyfs_setxattr,
+	.getxattr	= cannyfs_getxattr,
+	.listxattr	= cannyfs_listxattr,
+	.removexattr	= cannyfs_removexattr,
 #endif
 #ifdef HAVE_LIBULOCKMGR
-	.lock		= xmp_lock,
+	.lock		= cannyfs_lock,
 #endif
-	.flock		= xmp_flock,
+	.flock		= cannyfs_flock,
 };
 
 int main(int argc, char *argv[])
 {
 	umask(0);
-	return fuse_main(argc, argv, &xmp_oper, NULL);
+	return fuse_main(argc, argv, &cannyfs_oper, NULL);
 }
