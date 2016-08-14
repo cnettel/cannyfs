@@ -73,10 +73,7 @@
 
 #include <boost/lockfree/stack.hpp>
 
-#include <boost/thread/shared_mutex.hpp>
-
 using namespace tbb;
-using namespace boost;
 using namespace boost::lockfree;
 
 using namespace std;
@@ -214,13 +211,13 @@ struct cannyfs_filemap
 {
 private:
 	map<string, cannyfs_filedata> data;
-	shared_mutex lock;
+	shared_timed_mutex lock;
 public:
 	cannyfs_filedata* get(std::string path, bool always, unique_lock<mutex>& lock)
 	{
 		cannyfs_filedata* result = nullptr;
 		{
-			shared_lock<shared_mutex> maplock(this->lock);
+			shared_lock<shared_timed_mutex> maplock(this->lock);
 			auto i = data.find(path);
 			if (i != data.end())
 			{
