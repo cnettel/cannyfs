@@ -59,7 +59,6 @@
 
 #include <atomic>
 #include <thread>
-#include <shared_mutex>
 #include <mutex>
 #include <condition_variable>
 #include <map>
@@ -74,7 +73,10 @@
 
 #include <boost/lockfree/stack.hpp>
 
+#include <boost/thread/shared_mutex.hpp>
+
 using namespace tbb;
+using namespace boost;
 using namespace boost::lockfree;
 
 using namespace std;
@@ -168,7 +170,7 @@ struct cannyfs_options
 	bool closeverylate = true;
 	bool restrictivedirs = false;
 	bool eagerfsync = true;
-	bool eagercreeate = true;
+	bool eagercreate = true;
 	bool ignorefsync = true;
 	int numThreads = 16;
 } options;
@@ -477,7 +479,7 @@ static int cannyfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	while (1) {
 		struct stat st;
 		off_t nextoff;
-		enum fuse_fill_dir_flags fill_flags = 0;
+		enum fuse_fill_dir_flags fill_flags = (fuse_fill_dir_flags) 0;
 
 		if (!d->entry) {
 			d->entry = readdir(d->dp);
