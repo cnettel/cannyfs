@@ -80,6 +80,47 @@ struct cannyfs_filedata
 	condition_variable processed;
 };
 
+struct cannyfs_filehandle
+{
+	mutex lock;
+	int fd;
+	int pipefds[2];
+	condition_variable opened;
+
+	cannyfs_filehandle() : fd(-1), pipefds{-1, -1}
+	{
+	}
+
+	int getpipefd(int dir)
+	{
+		lock_guard<mutex> locallock(lock);
+		if (pipefds[0] == -1)
+		{
+			pipe(pipefds);
+		}
+
+		return pipefds[dir];
+	}
+
+	void setfh(int fd)
+	{
+		lock_guard<mutex> locallock(lock);
+		this->fd = fd;
+		opened.notify_all();
+	}
+
+	int getfh()
+	{
+		unique_lock<mutex> locallock(lock);
+		while (fd == -1)
+		{
+			opened.wait(locallock);
+		}
+		
+		return fd;
+	}
+};
+
 struct cannyfs_options
 {
 	bool eagerlink = true;
@@ -93,11 +134,43 @@ struct cannyfs_options
 	bool restrictivedirs = false;
 	bool eagerfsync = true;
 	bool ignorefsync = true;
+	int numThreads = 16;
 } options;
 
 
 const int JUST_BARRIER = 0;
 const int LOCK_WHOLE = 1;
+
+
+void cannyfs_reporterror()
+{
+	fprintf(stderr, "ERROR: %d\n", errno);
+}
+
+void cannyfs_negerrorchecker(int code)
+{
+	if (code < 0)
+	{
+		cannyfs_reporterror();
+	}
+	// abort();
+	// TODO: ADD OPTION
+}
+
+struct cannyfs_closer
+{
+private:
+	int fd;
+public:
+	cannyfs_closer() = delete;
+	cannyfs_closer(int fd) : fd(fd) {}
+	~cannyfs_closer()
+	{
+		cannyfs_negerrorchecker(close(fd));
+	}
+};
+
+vector<cannyfs_closer> closes;
 
 struct cannyfs_filemap
 {
@@ -141,7 +214,7 @@ set<long long> waitingEvents;
 
 int getfh(const fuse_file_info* fi)
 {
-	return fi->fh;
+	return (cannyfs_filehandle*)(fi->fh) ->getfh();
 }
 
 struct cannyfs_reader
@@ -186,8 +259,6 @@ public:
 		if (global) waitingEvents.insert(eventId);
 		fileobj = filemap.get(path, true, lock);
 
-		fileobj->lastEventId = eventId;
-
 		if (flag != LOCK_WHOLE)
 		{
 			lock.release();
@@ -220,6 +291,8 @@ public:
 };
 
 queue<function<int()> > workQueue;
+mutex queuelock;
+condition_variable queuecond;
 
 int cannyfs_add_write(bool defer, function<int(int)> fun)
 {
@@ -230,7 +303,9 @@ int cannyfs_add_write(bool defer, function<int(int)> fun)
 	}
 	else
 	{
+		lock_guard<mutex> locallock(queuelock);
 		workQueue.emplace([eventIdNow, fun]() { return fun(eventIdNow); });
+		queuecond.notify_one();
 		return 0;
 	}
 }
@@ -554,7 +629,7 @@ static int cannyfs_ftruncate(const char *path, off_t size,
 
 	(void) path;
 
-	res = ftruncate(fi->fh, size);
+	res = ftruncate(getfh(fi), size);
 	if (res == -1)
 		return -errno;
 
@@ -579,25 +654,29 @@ static int cannyfs_utimens(const char *cpath, const struct timespec ts[2])
 
 static int cannyfs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
-	int fd;
+	fi->fh = (int) new cannyfs_filehandle();
 
-	fd = open(path, fi->flags, mode);
-	if (fd == -1)
-		return -errno;
+	return cannyfs_add_write(options.eagercreate, path, fi, [mode](std::string path, fi)
+	{
+		int fd = open(path, fi->flags, mode);
+		if (fd == -1)
+			return -errno;
 
-	fi->fh = fd;
-	return 0;
+		((cannyfs_filehandle*)(fi->fh))->setfh(fd);
+	});
 }
 
 static int cannyfs_open(const char *path, struct fuse_file_info *fi)
 {
 	int fd;
 
+	// TODO: MEMORY LEAKS.
+	fi->fh = (int) new cannyfs_filehandle();
 	fd = open(path, fi->flags);
 	if (fd == -1)
 		return -errno;
 
-	fi->fh = fd;
+	((cannyfs_filehandle*)(fi->fh))->setfh(fd);
 	return 0;
 }
 
@@ -607,7 +686,7 @@ static int cannyfs_read(const char *path, char *buf, size_t size, off_t offset,
 	int res;
 
 	(void) path;
-	res = pread(fi->fh, buf, size, offset);
+	res = pread(getfh(fi), buf, size, offset);
 	if (res == -1)
 		res = -errno;
 
@@ -617,6 +696,7 @@ static int cannyfs_read(const char *path, char *buf, size_t size, off_t offset,
 static int cannyfs_read_buf(const char *path, struct fuse_bufvec **bufp,
 			size_t size, off_t offset, struct fuse_file_info *fi)
 {
+	cannyfs_reader b(path, JUST_BARRIER);
 	struct fuse_bufvec *src;
 
 	(void) path;
@@ -628,7 +708,7 @@ static int cannyfs_read_buf(const char *path, struct fuse_bufvec **bufp,
 	*src = FUSE_BUFVEC_INIT(size);
 
 	src->buf[0].flags = (fuse_buf_flags) (FUSE_BUF_IS_FD | FUSE_BUF_FD_SEEK);
-	src->buf[0].fd = fi->fh;
+	src->buf[0].fd = getfh(fi);
 	src->buf[0].pos = offset;
 
 	*bufp = src;
@@ -644,29 +724,46 @@ static int cannyfs_write(const char *path, const char *buf, size_t size,
 	int res;
 
 	(void) path;
-	res = pwrite(fi->fh, buf, size, offset);
+	res = pwrite(getfh(fi), buf, size, offset);
 	if (res == -1)
 		res = -errno;
 
 	return res;
 }
 
-static int cannyfs_write_buf(const char *path, struct fuse_bufvec *buf,
+static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 		     off_t offset, struct fuse_file_info *fi)
 {
-	int res = copy_to_pipe(buf);
-	if (res) return res;
+	cannyfs_filehandle* cfh = (cannyfs_filehandle*)(fi->fh);
 
+	int sz = fuse_buf_size(buf);
 
-	struct fuse_bufvec dst = FUSE_BUFVEC_INIT(fuse_buf_size(buf));
+	int toret = cannyfs_add_write(true, cpath, fi, [sz](std::string path, const fuse_file_info *fi) {
 
-	(void) path;
+		struct fuse_bufvec dst = FUSE_BUFVEC_INIT(sz);
 
-	dst.buf[0].flags = FUSE_BUF_IS_FD | FUSE_BUF_FD_SEEK;
-	dst.buf[0].fd = fi->fh;
-	dst.buf[0].pos = offset;
+		dst.buf[0].flags = FUSE_BUF_IS_FD | FUSE_BUF_FD_SEEK;
+		dst.buf[0].fd = getfh(fi);
+		dst.buf[0].pos = offset;
 
-	return fuse_buf_copy(&dst, buf, FUSE_BUF_SPLICE_NONBLOCK);
+		struct fuse_bufvec newsrc = FUSE_BUFVEC_INIT(sz);
+		newsrc.buf[0].fd = ((cannyfs_filehandle*)fi->fh)->getpipefd(0);
+		newsrc.buf[0].flags = FUSE_BUF_IS_FD;
+
+		return fuse_buf_copy(&dst, &newsrc, FUSE_BUF_SPLICE_NONBLOCK);
+	});
+
+	if (toret < 0)
+	{
+		return toret;
+	}
+
+	struct fuse_bufvec halfdst = FUSE_BUFVEC_INIT(sz);
+
+	dst.buf[0].flags = FUSE_BUF_IS_FD;
+	dst.buf[0].fd = getfh((cannyfs_filehandle*)fi->fh)->getpipefd(1);
+
+	return fuse_buf_copy(&halfdst, buf, FUSE_BUF_SPLICE_NONBLOCK);
 }
 
 static int cannyfs_statfs(const char *path, struct statvfs *stbuf)
@@ -825,55 +922,61 @@ static int cannyfs_flock(const char *path, struct fuse_file_info *fi, int op)
 	return 0;
 }
 
-static struct fuse_operations cannyfs_oper = {
-	.getattr	= cannyfs_getattr,
-	.fgetattr	= cannyfs_fgetattr,
-	.access		= cannyfs_access,
-	.readlink	= cannyfs_readlink,
-	.opendir	= cannyfs_opendir,
-	.readdir	= cannyfs_readdir,
-	.releasedir	= cannyfs_releasedir,
-	.mknod		= cannyfs_mknod,
-	.mkdir		= cannyfs_mkdir,
-	.symlink	= cannyfs_symlink,
-	.unlink		= cannyfs_unlink,
-	.rmdir		= cannyfs_rmdir,
-	.rename		= cannyfs_rename,
-	.link		= cannyfs_link,
-	.chmod		= cannyfs_chmod,
-	.chown		= cannyfs_chown,
-	.truncate	= cannyfs_truncate,
-	.ftruncate	= cannyfs_ftruncate,
-#ifdef HAVE_UTIMENSAT
-	.utimens	= cannyfs_utimens,
-#endif
-	.create		= cannyfs_create,
-	.open		= cannyfs_open,
-	.read		= cannyfs_read,
-	.read_buf	= cannyfs_read_buf,
-	.write		= cannyfs_write,
-	.write_buf	= cannyfs_write_buf,
-	.statfs		= cannyfs_statfs,
-	.flush		= cannyfs_flush,
-	.release	= cannyfs_release,
-	.fsync		= cannyfs_fsync,
-#ifdef HAVE_POSIX_FALLOCATE
-	.fallocate	= cannyfs_fallocate,
-#endif
-#ifdef HAVE_SETXATTR
-	.setxattr	= cannyfs_setxattr,
-	.getxattr	= cannyfs_getxattr,
-	.listxattr	= cannyfs_listxattr,
-	.removexattr	= cannyfs_removexattr,
-#endif
-#ifdef HAVE_LIBULOCKMGR
-	.lock		= cannyfs_lock,
-#endif
-	.flock		= cannyfs_flock,
-};
+static struct fuse_operations cannyfs_oper;
+
+
 
 int main(int argc, char *argv[])
 {
 	umask(0);
+	cannyfs_oper.flag_nopath = 0;
+	cannyfs_oper.flag_reserved = 0;
+	cannyfs_oper.getattr = cannyfs_getattr;
+	cannyfs_oper.readlink = cannyfs_readlink;
+	cannyfs_oper.mknod = cannyfs_mknod;
+	cannyfs_oper.mkdir = cannyfs_mkdir;
+	cannyfs_oper.fgetattr = cannyfs_fgetattr;
+	cannyfs_oper.access = cannyfs_access;
+
+	cannyfs_oper.opendir = cannyfs_opendir;
+	cannyfs_oper.readdir = cannyfs_readdir;
+	cannyfs_oper.releasedir = cannyfs_releasedir;
+
+
+	cannyfs_oper.symlink = cannyfs_symlink;
+	cannyfs_oper.unlink = cannyfs_unlink;
+	cannyfs_oper.rmdir = cannyfs_rmdir;
+	cannyfs_oper.rename = cannyfs_rename;
+	cannyfs_oper.link = cannyfs_link;
+	cannyfs_oper.chmod = cannyfs_chmod;
+	cannyfs_oper.chown = cannyfs_chown;
+	cannyfs_oper.truncate = cannyfs_truncate;
+	cannyfs_oper.ftruncate = cannyfs_ftruncate;
+#ifdef HAVE_UTIMENSAT
+	cannyfs_oper.utimens = cannyfs_utimens;
+#endif
+	cannyfs_oper.create = cannyfs_create;
+	cannyfs_oper.open = cannyfs_open;
+	cannyfs_oper.read = cannyfs_read;
+	cannyfs_oper.read_buf = cannyfs_read_buf;
+	cannyfs_oper.write = cannyfs_write;
+	cannyfs_oper.write_buf = cannyfs_write_buf;
+	cannyfs_oper.statfs = cannyfs_statfs;
+	cannyfs_oper.flush = cannyfs_flush;
+	cannyfs_oper.release = cannyfs_release;
+	cannyfs_oper.fsync = cannyfs_fsync;
+#ifdef HAVE_POSIX_FALLOCATE
+	cannyfs_oper.fallocate = cannyfs_fallocate;
+#endif
+#ifdef HAVE_SETXATTR
+	cannyfs_oper.setxattr = cannyfs_setxattr;
+	cannyfs_oper.getxattr = cannyfs_getxattr;
+	cannyfs_oper.listxattr = cannyfs_listxattr;
+	cannyfs_oper.removexattr = cannyfs_removexattr;
+#endif
+#ifdef HAVE_LIBULOCKMGR
+	cannyfs_oper.lock = cannyfs_lock;
+#endif
+	cannyfs_oper.flock = cannyfs_flock;
 	return fuse_main(argc, argv, &cannyfs_oper, NULL);
 }
