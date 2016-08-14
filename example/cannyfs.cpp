@@ -873,7 +873,7 @@ static int cannyfs_release(const char *cpath, struct fuse_file_info *fi)
 		// Just adding it to the close list might lock, if we don't have an fh yet
 		return cannyfs_add_write(options.eagerclose, cpath, fi, [](std::string path, const fuse_file_info *fi) {
 			closes.push_back(dup(getfh(fi)));
-		}
+		});
 	}
 
 	return cannyfs_add_write(options.eagerclose, cpath, fi, [](std::string path, const fuse_file_info *fi) {
