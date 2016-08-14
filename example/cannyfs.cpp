@@ -344,7 +344,10 @@ int cannyfs_add_write(bool defer, function<int(int)> fun)
 	{
 		workQueue.run([eventIdNow, fun]() {
 			if (options.verbose) fprintf(stderr, "Doing event ID %lld\n", eventIdNow); 
-			return fun(eventIdNow); });
+			int retval = fun(eventIdNow);
+			if (options.verbose) fprintf(stderr, "Did event ID %lld\n", eventIdNow);
+			return retval;
+		});
 		return 0;
 	}
 }
