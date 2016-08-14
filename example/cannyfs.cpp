@@ -339,14 +339,16 @@ int cannyfs_add_write(bool defer, function<int(int)> fun)
 	}
 	else
 	{
-		workQueue.run([eventIdNow, fun]() { return fun(eventIdNow); });
+		workQueue.run([eventIdNow, fun]() {
+			if (options.verbose) fprintf(stderr, "Doing event ID %d\n", eventIdNow); 
+			return fun(eventIdNow); });
 		return 0;
 	}
 }
 
 int cannyfs_add_write(bool defer, std::string path, function<int(string)> fun)
 {
-	if (options.verbose) fprintf(stderr, "Adding write for %s\n", path.c_str());
+	if (options.verbose) fprintf(stderr, "Adding write (A) for %s\n", path.c_str());
 	return cannyfs_add_write(defer, [path, fun](int eventId)->int {
 		cannyfs_writer writer(path, LOCK_WHOLE, eventId);
 		return fun(path);
@@ -355,6 +357,7 @@ int cannyfs_add_write(bool defer, std::string path, function<int(string)> fun)
 
 int cannyfs_add_write(bool defer, std::string path, fuse_file_info* origfi, function<int(string, const fuse_file_info*)> fun)
 {
+	if (options.verbose) fprintf(stderr, "Adding write (B) for %s\n", path.c_str());
 	fuse_file_info fi = *origfi;
 	return cannyfs_add_write(defer, [path, fun, fi](int eventId)->int {
 		cannyfs_writer writer(path, LOCK_WHOLE, eventId);
@@ -364,6 +367,7 @@ int cannyfs_add_write(bool defer, std::string path, fuse_file_info* origfi, func
 
 int cannyfs_add_write(bool defer, std::string path1, std::string path2, function<int(string, string)> fun)
 {
+	if (options.verbose) fprintf(stderr, "Adding write (C) for %s\n", path.c_str());
 	return cannyfs_add_write(defer, [path1, path2, fun](int eventId)->int {
 		cannyfs_writer writer1(path1, LOCK_WHOLE, eventId);
 		cannyfs_writer writer2(path2, LOCK_WHOLE, eventId);
