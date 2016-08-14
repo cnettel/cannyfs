@@ -133,7 +133,7 @@ struct cannyfs_filehandle
 
 typedef concurrent_vector<cannyfs_filehandle> fhstype;
 fhstype fhs;
-stack<fhstype::iterator> freefhs;
+stack<fhstype::iterator> freefhs(16);
 
 fhstype::iterator getnewfh()
 {
