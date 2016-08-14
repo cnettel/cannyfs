@@ -67,6 +67,16 @@
 #include <string>
 #include <functional>
 #include <queue>
+
+#include <tbb/task_group.h>
+#include <tbb/concurrent_vector.h>
+#include <tbb/concurrent_queue.h>
+
+#include <boost/lockfree/stack.hpp>
+
+using namespace tbb;
+using namespace boost::lockfree;
+
 using namespace std;
 
 struct cannyfs_filedata
@@ -120,6 +130,31 @@ struct cannyfs_filehandle
 		return fd;
 	}
 };
+
+typedef concurrent_vector<cannyfs_filehandle> fhstype;
+fhstype fhs;
+stack<fhstype::iterator> freefhs;
+
+fhstype::iterator getnewfh()
+{
+	fhstype::iterator toreturn;
+	if (freefhs.pop(toreturn))
+	{
+		return toreturn;
+	}
+	return fhs.grow_by(1);
+}
+
+cannyfs_filehandle* getcfh(int fd)
+{
+	return &fhs[fd];
+}
+
+int getfh(const fuse_file_info* fi)
+{
+	return getcfh(fi->fh)->getfh();
+}
+
 
 struct cannyfs_options
 {
@@ -212,11 +247,6 @@ public:
 
 set<long long> waitingEvents;
 
-int getfh(const fuse_file_info* fi)
-{
-	return (cannyfs_filehandle*)(fi->fh) ->getfh();
-}
-
 struct cannyfs_reader
 {
 private:
@@ -290,9 +320,7 @@ public:
 	}
 };
 
-queue<function<int()> > workQueue;
-mutex queuelock;
-condition_variable queuecond;
+taks_group workQueue;
 
 int cannyfs_add_write(bool defer, function<int(int)> fun)
 {
@@ -303,9 +331,7 @@ int cannyfs_add_write(bool defer, function<int(int)> fun)
 	}
 	else
 	{
-		lock_guard<mutex> locallock(queuelock);
-		workQueue.emplace([eventIdNow, fun]() { return fun(eventIdNow); });
-		queuecond.notify_one();
+		workQueue.run([eventIdNow, fun]() { return fun(eventIdNow); });
 		return 0;
 	}
 }
@@ -654,7 +680,7 @@ static int cannyfs_utimens(const char *cpath, const struct timespec ts[2])
 
 static int cannyfs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
-	fi->fh = (int) new cannyfs_filehandle();
+	fi->fh = getnewfh() - fhs.begin();
 
 	return cannyfs_add_write(options.eagercreate, path, fi, [mode](std::string path, fi)
 	{
@@ -662,7 +688,7 @@ static int cannyfs_create(const char *path, mode_t mode, struct fuse_file_info *
 		if (fd == -1)
 			return -errno;
 
-		((cannyfs_filehandle*)(fi->fh))->setfh(fd);
+		getcfh(fi->fh))->setfh(fd);
 	});
 }
 
@@ -671,12 +697,12 @@ static int cannyfs_open(const char *path, struct fuse_file_info *fi)
 	int fd;
 
 	// TODO: MEMORY LEAKS.
-	fi->fh = (int) new cannyfs_filehandle();
+	fi->fh = getnewfh() - fhs.begin();
 	fd = open(path, fi->flags);
 	if (fd == -1)
 		return -errno;
 
-	((cannyfs_filehandle*)(fi->fh))->setfh(fd);
+	getcfh(fi->fh)->setfh(fd);
 	return 0;
 }
 
@@ -734,20 +760,20 @@ static int cannyfs_write(const char *path, const char *buf, size_t size,
 static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 		     off_t offset, struct fuse_file_info *fi)
 {
-	cannyfs_filehandle* cfh = (cannyfs_filehandle*)(fi->fh);
+	cannyfs_filehandle* cfh = getcfh(fi->fh);
 
 	int sz = fuse_buf_size(buf);
 
-	int toret = cannyfs_add_write(true, cpath, fi, [sz](std::string path, const fuse_file_info *fi) {
+	int toret = cannyfs_add_write(true, cpath, fi, [sz, offset](std::string path, const fuse_file_info *fi) {
 
 		struct fuse_bufvec dst = FUSE_BUFVEC_INIT(sz);
 
-		dst.buf[0].flags = FUSE_BUF_IS_FD | FUSE_BUF_FD_SEEK;
+		dst.buf[0].flags = (fuse_buf_flags) (FUSE_BUF_IS_FD | FUSE_BUF_FD_SEEK);
 		dst.buf[0].fd = getfh(fi);
 		dst.buf[0].pos = offset;
 
 		struct fuse_bufvec newsrc = FUSE_BUFVEC_INIT(sz);
-		newsrc.buf[0].fd = ((cannyfs_filehandle*)fi->fh)->getpipefd(0);
+		newsrc.buf[0].fd = getcfh(fi->fh)->getpipefd(0);
 		newsrc.buf[0].flags = FUSE_BUF_IS_FD;
 
 		return fuse_buf_copy(&dst, &newsrc, FUSE_BUF_SPLICE_NONBLOCK);
@@ -761,7 +787,7 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 	struct fuse_bufvec halfdst = FUSE_BUFVEC_INIT(sz);
 
 	dst.buf[0].flags = FUSE_BUF_IS_FD;
-	dst.buf[0].fd = getfh((cannyfs_filehandle*)fi->fh)->getpipefd(1);
+	dst.buf[0].fd = getcfh(fi->fh)->getpipefd(1);
 
 	return fuse_buf_copy(&halfdst, buf, FUSE_BUF_SPLICE_NONBLOCK);
 }
@@ -978,5 +1004,6 @@ int main(int argc, char *argv[])
 	cannyfs_oper.lock = cannyfs_lock;
 #endif
 	cannyfs_oper.flock = cannyfs_flock;
-	return fuse_main(argc, argv, &cannyfs_oper, NULL);
+	int toret = fuse_main(argc, argv, &cannyfs_oper, NULL);
+	workQueue.wait();
 }
