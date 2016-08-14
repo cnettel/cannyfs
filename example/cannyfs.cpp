@@ -330,6 +330,7 @@ public:
 	}
 };
 
+task_scheduler_init init(16);
 task_group workQueue;
 
 int cannyfs_add_write(bool defer, function<int(int)> fun)
@@ -1000,8 +1001,6 @@ static struct fuse_operations cannyfs_oper;
 
 int main(int argc, char *argv[])
 {
-	task_scheduler_init init(16);
-
 	umask(0);
 	cannyfs_oper.flag_nopath = 0;
 	cannyfs_oper.flag_reserved = 0;
