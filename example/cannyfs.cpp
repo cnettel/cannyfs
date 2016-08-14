@@ -170,6 +170,7 @@ struct cannyfs_options
 	bool eagerfsync = true;
 	bool eagercreate = true;
 	bool ignorefsync = true;
+	bool verbose = true;
 	int numThreads = 16;
 } options;
 
@@ -256,6 +257,8 @@ public:
 	cannyfs_filedata* fileobj;
 	cannyfs_reader(std::string path, int flag)
 	{
+		if (options.verbose) fprintf(stderr, "Waiting for reading %s\n", path.c_str());
+
 		unique_lock<mutex> locallock;
 		fileobj = filemap.get(path, flag == LOCK_WHOLE, locallock);
 
@@ -286,6 +289,7 @@ private:
 public:
 	cannyfs_writer(std::string path, int flag, long long eventId) : eventId(eventId), global(path != "")
 	{
+		if (options.verbose) fprintf(stderr, "Entering write lock for %s\n", path.c_str());
 		generalwriter = nullptr;
 		if (global) waitingEvents.insert(eventId);
 		fileobj = filemap.get(path, true, lock);
@@ -300,6 +304,7 @@ public:
 
 	~cannyfs_writer()
 	{
+		// TODO THREAD UNSAFE?!
 		if (!global) waitingEvents.erase(eventId);
 		if (!lock.owns_lock()) lock.lock();
 
@@ -339,6 +344,7 @@ int cannyfs_add_write(bool defer, function<int(int)> fun)
 
 int cannyfs_add_write(bool defer, std::string path, function<int(string)> fun)
 {
+	if (options.verbose) fprintf(stderr, "Adding write for %s\n", path.c_str());
 	return cannyfs_add_write(defer, [path, fun](int eventId)->int {
 		cannyfs_writer writer(path, LOCK_WHOLE, eventId);
 		return fun(path);
