@@ -826,7 +826,7 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 
 	struct fuse_bufvec halfdst = FUSE_BUFVEC_INIT(sz);
 
-	halfdst.buf[0].flags = FUSE_BUF_IS_FD | FUSE_BUF_FD_RETRY;
+	halfdst.buf[0].flags = (fuse_buf_flags) (FUSE_BUF_IS_FD | FUSE_BUF_FD_RETRY);
 	halfdst.buf[0].fd = getcfh(fi->fh)->getpipefd(1);
 
 	return fuse_buf_copy(&halfdst, buf, FUSE_BUF_SPLICE_NONBLOCK);
