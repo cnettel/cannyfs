@@ -68,6 +68,7 @@
 #include <functional>
 #include <queue>
 
+#include <tbb/task_scheduler_init.h>
 #include <tbb/task_group.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/concurrent_queue.h>
@@ -988,6 +989,8 @@ static struct fuse_operations cannyfs_oper;
 
 int main(int argc, char *argv[])
 {
+	task_scheduler_init init();
+
 	umask(0);
 	cannyfs_oper.flag_nopath = 0;
 	cannyfs_oper.flag_reserved = 0;
