@@ -843,11 +843,13 @@ static int cannyfs_flush(const char *cpath, struct fuse_file_info *fi)
 {
 	if (options.closeverylate)
 	{
-		closes.push_back(dup(getfh(fi)));
-		return 0;
+		// Just adding it to the close list might lock, if we don't have an fh yet
+		return cannyfs_add_write(options.eagerflush, cpath, fi, [](std::string path, const fuse_file_info *fi) {
+			closes.push_back(dup(getfh(fi)));
+		}
 	}
 
-	return cannyfs_add_write(options.eagerclose, cpath, fi, [](std::string path, const fuse_file_info *fi) {
+	return cannyfs_add_write(options.eagerflush, cpath, fi, [](std::string path, const fuse_file_info *fi) {
 		int res;
 
 		/* This is called from every close on an open file, so call the
@@ -867,7 +869,10 @@ static int cannyfs_release(const char *cpath, struct fuse_file_info *fi)
 {
 	if (options.closeverylate)
 	{
-		closes.push_back(getfh(fi));
+		// Just adding it to the close list might lock, if we don't have an fh yet
+		return cannyfs_add_write(options.eagerclose, cpath, fi, [](std::string path, const fuse_file_info *fi) {
+			closes.push_back(dup(getfh(fi)));
+		}
 	}
 
 	return cannyfs_add_write(options.eagerclose, cpath, fi, [](std::string path, const fuse_file_info *fi) {
@@ -989,7 +994,7 @@ static struct fuse_operations cannyfs_oper;
 
 int main(int argc, char *argv[])
 {
-	task_scheduler_init init();
+	task_scheduler_init init(16);
 
 	umask(0);
 	cannyfs_oper.flag_nopath = 0;
