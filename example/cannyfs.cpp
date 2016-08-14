@@ -461,9 +461,9 @@ static inline struct cannyfs_dirp *get_dirp(struct fuse_file_info *fi)
 }
 
 static int cannyfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
-		       off_t offset, struct fuse_file_info *fi,
+		       off_t offset, struct fuse_file_info *fi
 #if FUSE_USE_VERSION >= 30
-		       enum fuse_readdir_flags flags
+		       , enum fuse_readdir_flags flags
 #endif
 )
 {
