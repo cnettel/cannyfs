@@ -229,7 +229,7 @@ public:
 
 		if (always && !result)
 		{
-			unique_lock<shared_mutex> maplock(this->lock);
+			unique_lock<shared_timed_mutex> maplock(this->lock);
 			auto i = data.find(path);
 			if (i != data.end())
 			{
