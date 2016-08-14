@@ -159,6 +159,7 @@ int getfh(const fuse_file_info* fi)
 
 struct cannyfs_options
 {
+	bool eagerflush = true;
 	bool eagerlink = true;
 	bool eagerchmod = true;
 	bool veryeageraccess = true;
