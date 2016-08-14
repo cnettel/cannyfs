@@ -462,7 +462,10 @@ static inline struct cannyfs_dirp *get_dirp(struct fuse_file_info *fi)
 
 static int cannyfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 		       off_t offset, struct fuse_file_info *fi,
-		       enum fuse_readdir_flags flags)
+#if FUSE_USE_VERSION >= 30
+		       enum fuse_readdir_flags flags
+#endif
+)
 {
 	cannyfs_dirreader b(path, JUST_BARRIER);
 
@@ -477,13 +480,16 @@ static int cannyfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	while (1) {
 		struct stat st;
 		off_t nextoff;
+#if FUSE_USE_VERSION >= 30
 		enum fuse_fill_dir_flags fill_flags = (fuse_fill_dir_flags) 0;
+#endif
 
 		if (!d->entry) {
 			d->entry = readdir(d->dp);
 			if (!d->entry)
 				break;
 		}
+#if FUSE_USE_VERSION >= 30
 #ifdef HAVE_FSTATAT
 		if (flags & FUSE_READDIR_PLUS) {
 			int res;
@@ -495,12 +501,19 @@ static int cannyfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 		}
 #endif
 		if (!(fill_flags & FUSE_FILL_DIR_PLUS)) {
+#endif
 			memset(&st, 0, sizeof(st));
 			st.st_ino = d->entry->d_ino;
 			st.st_mode = d->entry->d_type << 12;
+#if FUSE_USE_VERSION >= 30
 		}
+#endif
 		nextoff = telldir(d->dp);
-		if (filler(buf, d->entry->d_name, &st, nextoff, fill_flags))
+		if (filler(buf, d->entry->d_name, &st, nextoff
+#if FUSE_USE_VERSION >= 30
+			, fill_flags
+#endif
+		))
 			break;
 
 		d->entry = NULL;
@@ -581,15 +594,21 @@ static int cannyfs_symlink(const char *from, const char *to)
 	return 0;
 }
 
-static int cannyfs_rename(const char *from, const char *to, unsigned int flags)
+static int cannyfs_rename(const char *from, const char *to
+#if FUSE_USE_VERSION >= 30
+	, unsigned int flags
+#endif
+)
 {
 	// TODO: I/O logic at rename, what will the names be
 	cannyfs_reader b(from, LOCK_WHOLE);
 	int res;
 
+#if FUSE_USE_VERSION >= 30
 	/* When we have renameat2() in libc, then we can implement flags */
 	if (flags)
 		return -EINVAL;
+#endif
 
 	res = rename(from, to);
 	if (res == -1)
