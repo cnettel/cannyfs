@@ -320,7 +320,7 @@ public:
 	}
 };
 
-taks_group workQueue;
+task_group workQueue;
 
 int cannyfs_add_write(bool defer, function<int(int)> fun)
 {
@@ -682,7 +682,7 @@ static int cannyfs_create(const char *path, mode_t mode, struct fuse_file_info *
 {
 	fi->fh = getnewfh() - fhs.begin();
 
-	return cannyfs_add_write(options.eagercreate, path, fi, [mode](std::string path, fi)
+	return cannyfs_add_write(options.eagercreate, path, fi, [mode](std::string path, const fuse_file_info* fi)
 	{
 		int fd = open(path, fi->flags, mode);
 		if (fd == -1)
@@ -786,8 +786,8 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 
 	struct fuse_bufvec halfdst = FUSE_BUFVEC_INIT(sz);
 
-	dst.buf[0].flags = FUSE_BUF_IS_FD;
-	dst.buf[0].fd = getcfh(fi->fh)->getpipefd(1);
+	halfdst.buf[0].flags = FUSE_BUF_IS_FD;
+	halfdst.buf[0].fd = getcfh(fi->fh)->getpipefd(1);
 
 	return fuse_buf_copy(&halfdst, buf, FUSE_BUF_SPLICE_NONBLOCK);
 }
