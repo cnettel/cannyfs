@@ -275,6 +275,8 @@ public:
 		{
 			swap(lock, locallock);
 		}
+
+		if (options.verbose) fprintf(stderr, "Got reader lock %s\n", path.c_str());
 	}
 };
 
@@ -706,6 +708,7 @@ static int cannyfs_utimens(const char *cpath, const struct timespec ts[2])
 
 static int cannyfs_create(const char *cpath, mode_t mode, struct fuse_file_info *fi)
 {
+	if (options.verbose) fprintf(stderr, "Going to create %s\n", cpath);
 	fi->fh = getnewfh() - fhs.begin();
 
 	return cannyfs_add_write(options.eagercreate, cpath, fi, [mode](std::string path, const fuse_file_info* fi)
@@ -720,6 +723,7 @@ static int cannyfs_create(const char *cpath, mode_t mode, struct fuse_file_info 
 
 static int cannyfs_open(const char *path, struct fuse_file_info *fi)
 {
+	if (options.verbose) fprintf(stderr, "Going to open %s\n", cpath);
 	int fd;
 
 	// TODO: MEMORY LEAKS.
