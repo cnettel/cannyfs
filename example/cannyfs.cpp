@@ -168,6 +168,7 @@ struct cannyfs_options
 	bool closeverylate = true;
 	bool restrictivedirs = false;
 	bool eagerfsync = true;
+	bool eagercreeate = true;
 	bool ignorefsync = true;
 	int numThreads = 16;
 } options;
@@ -678,17 +679,17 @@ static int cannyfs_utimens(const char *cpath, const struct timespec ts[2])
 }
 #endif
 
-static int cannyfs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
+static int cannyfs_create(const char *cpath, mode_t mode, struct fuse_file_info *fi)
 {
 	fi->fh = getnewfh() - fhs.begin();
 
-	return cannyfs_add_write(options.eagercreate, path, fi, [mode](std::string path, const fuse_file_info* fi)
+	return cannyfs_add_write(options.eagercreate, cpath, fi, [mode](std::string path, const fuse_file_info* fi)
 	{
-		int fd = open(path, fi->flags, mode);
+		int fd = open(path.c_str(), fi->flags, mode);
 		if (fd == -1)
 			return -errno;
 
-		getcfh(fi->fh))->setfh(fd);
+		getcfh(fi->fh)->setfh(fd);
 	});
 }
 
