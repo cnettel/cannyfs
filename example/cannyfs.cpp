@@ -723,7 +723,7 @@ static int cannyfs_create(const char *cpath, mode_t mode, struct fuse_file_info 
 
 static int cannyfs_open(const char *path, struct fuse_file_info *fi)
 {
-	if (options.verbose) fprintf(stderr, "Going to open %s\n", cpath);
+	if (options.verbose) fprintf(stderr, "Going to open %s\n", path);
 	int fd;
 
 	// TODO: MEMORY LEAKS.
