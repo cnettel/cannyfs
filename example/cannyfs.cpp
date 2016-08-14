@@ -728,6 +728,7 @@ static int cannyfs_create(const char *cpath, mode_t mode, struct fuse_file_info 
 			return -errno;
 
 		getcfh(fi->fh)->setfh(fd);
+		return 0;
 	});
 }
 
