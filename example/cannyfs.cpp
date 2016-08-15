@@ -112,6 +112,15 @@ struct cannyfs_filedata
 		}
 		running = false;
 	}
+
+	void spinevent(unique_lock<mutex>& locallock)
+	{
+		long long eventId = lastEventId;
+		while (firstEventId < eventId)
+		{
+			fileobj->processed.wait(locallock);
+		}
+	}
 };
 
 struct cannyfs_filehandle
@@ -301,12 +310,7 @@ public:
 
 		if (fileobj)
 		{
-			long long eventId = fileobj->lastEventId;
-			while (fileobj->firstEventId < eventId)
-			{
-				fprintf(stderr, "Lock status: %d\n", (int) locallock.owns_lock());
-				fileobj->processed.wait(locallock);
-			}
+			fileobj->spinevent(locallock);
 		}
 
 		if (flag == LOCK_WHOLE)
@@ -375,7 +379,7 @@ int cannyfs_add_write(bool defer, std::string path, function<int(int)> fun)
 
 	eventIdNow = ++::eventId;
 
-	if (!defer) cannyfs_reader(path, JUST_BARRIER);
+	if (!defer) fileobj->spinevent();
 
 	fileobj->lastEventId = eventIdNow;
 
