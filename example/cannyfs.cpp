@@ -1115,7 +1115,7 @@ static struct fuse_operations cannyfs_oper;
 
 int main(int argc, char *argv[])
 {
-	global_control c(128);
+	global_control c(global_control::max_allowed_parallelism, 128);
 	umask(0);
 	cannyfs_oper.flag_nopath = 0;
 	cannyfs_oper.flag_reserved = 0;
