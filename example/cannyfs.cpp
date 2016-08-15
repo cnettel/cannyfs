@@ -379,6 +379,9 @@ int cannyfs_add_write(bool defer, std::string path, function<int(int)> fun)
 		});
 		if (!fileobj->running)
 		{
+			// Hey, WE will make it running now.
+			/*fileobj->running = true;
+			lock.release();*/
 			workQueue.enqueue([fileobj] { fileobj->run(); });
 		}
 
@@ -442,7 +445,7 @@ static int cannyfs_fgetattr(const char *path, struct stat *stbuf,
 
 	(void) path;
 
-	res = fstat(fi->fh, stbuf);
+	res = fstat(getfh(fi), stbuf);
 	if (res == -1)
 		return -errno;
 
@@ -1092,5 +1095,8 @@ int main(int argc, char *argv[])
 	cannyfs_oper.lock = cannyfs_lock;
 #endif
 	cannyfs_oper.flock = cannyfs_flock;
+	workQueue.initialize();
+
 	int toret = fuse_main(argc, argv, &cannyfs_oper, NULL);
+	return toret;
 }
