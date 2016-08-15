@@ -218,7 +218,7 @@ struct cannyfs_options
 	bool eagerfsync = true;
 	bool eagercreate = false;
 	bool ignorefsync = true;
-	bool verbose = true;
+	bool verbose = false;
 	int numThreads = 16;
 } options;
 
