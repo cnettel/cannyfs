@@ -1051,13 +1051,14 @@ static int cannyfs_setxattr(const char *path, const char *cname, const char *cva
 	std::string name = cname;
 	std::string value = cvalue;
 
-	return cannyfs_add_write(options.eagerxattr, path, [name, value, size, flags]
+	return cannyfs_add_write(options.eagerxattr, path, [name, value, size, flags] (std::string path)
 	{
 		int res = lsetxattr(path, name, value, size, flags);
 		if (res == -1)
 			return -errno;
+
+		return 0;
 	});
-	return 0;
 }
 
 static int cannyfs_getxattr(const char *path, const char *name, char *value,
@@ -1084,14 +1085,14 @@ static int cannyfs_listxattr(const char *path, char *list, size_t size)
 static int cannyfs_removexattr(const char *path, const char *cname)
 {
 	std::string name = cname;
-	return cannyfs_add_write(options.eagerxattr, path, [name]()
+	return cannyfs_add_write(options.eagerxattr, path, [name](std::string path)
 	{
 		int res = lremovexattr(path, name);
 		if (res == -1)
 			return -errno;
-	});
 
-	return 0;
+		return 0;
+	});
 }
 #endif /* HAVE_SETXATTR */
 
