@@ -886,8 +886,9 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 
 		int val = 0;
 
-		while (val < sz && select(FD_SETSIZE, &set, nullptr, nullptr, nullptr) <= 0)
+		while (val < sz)
 		{
+			while (select(FD_SETSIZE, &set, nullptr, nullptr, nullptr) <= 0) {}
 			int ret = fuse_buf_copy(&dst, &newsrc, (fuse_buf_copy_flags)0);
 			if (ret < 0)
 			{
@@ -915,8 +916,9 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 	FD_SET(halfdst.buf[0].fd, &set);
 
 	int val = 0;
-	while (val < sz && select(FD_SETSIZE, nullptr, &set, nullptr, nullptr) <= 0)
+	while (val < sz)
 	{
+		while (select(FD_SETSIZE, nullptr, &set, nullptr, nullptr) <= 0) {}
 		int ret = fuse_buf_copy(&halfdst, buf, (fuse_buf_copy_flags)0);
 		if (ret < 0)
 		{
