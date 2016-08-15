@@ -397,6 +397,7 @@ int cannyfs_add_write(bool defer, std::string path, function<int(int)> fun)
 		return retval;
 	};
 
+	fprintf(stderr, "In flight: %d\n", eventIdNow - retiredCount);
 	while (eventIdNow - retiredCount > 1400)
 	{
 		usleep(100);
