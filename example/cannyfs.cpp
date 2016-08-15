@@ -72,6 +72,7 @@
 #include <tbb/task_arena.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/concurrent_queue.h>
+#include <tbb/global_control.h>
 
 #include <boost/lockfree/stack.hpp>
 
@@ -366,8 +367,8 @@ public:
 	}
 };
 
-task_scheduler_init init(16);
-task_arena workQueue(16);
+task_scheduler_init init();
+task_arena workQueue();
 
 int cannyfs_add_write(bool defer, std::string path, function<int(int)> fun)
 {
@@ -1113,6 +1114,7 @@ static struct fuse_operations cannyfs_oper;
 
 int main(int argc, char *argv[])
 {
+	global_control c(128);
 	umask(0);
 	cannyfs_oper.flag_nopath = 0;
 	cannyfs_oper.flag_reserved = 0;
