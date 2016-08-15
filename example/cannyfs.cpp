@@ -1081,13 +1081,16 @@ static int cannyfs_listxattr(const char *path, char *list, size_t size)
 	return res;
 }
 
-static int cannyfs_removexattr(const char *path, const char *name)
+static int cannyfs_removexattr(const char *path, const char *cname)
 {
-	cannyfs_immediatewriter b(path, JUST_BARRIER);
+	std::string name = cname;
+	return cannyfs_add_write(options.eagerxattr, path, [name]()
+	{
+		int res = lremovexattr(path, name);
+		if (res == -1)
+			return -errno;
+	});
 
-	int res = lremovexattr(path, name);
-	if (res == -1)
-		return -errno;
 	return 0;
 }
 #endif /* HAVE_SETXATTR */
