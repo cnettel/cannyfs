@@ -80,6 +80,9 @@ using namespace boost::lockfree;
 
 using namespace std;
 
+atomic_llong eventId(0);
+atomic_llong retiredCount(0);
+
 struct cannyfs_filedata
 {
 	mutex lock;
@@ -120,6 +123,20 @@ struct cannyfs_filehandle
 
 	cannyfs_filehandle() : fd(-1), pipefds{-1, -1}
 	{
+	}
+
+	~cannyfs_filehandle()
+	{
+		// We might want to report the error up
+		/*if (fd != -1)
+		{
+			close(fd);
+		}*/
+		if (pipefds[0] != -1)
+		{
+			close(pipefds[0]);
+			close(pipefds[1]);
+		}
 	}
 
 	int getpipefd(int dir)
@@ -187,7 +204,7 @@ struct cannyfs_options
 	bool eagerutimens = true;
 	bool eagerchown = true;
 	bool eagerclose = true;
-	bool closeverylate = true;
+	bool closeverylate = false;
 	bool restrictivedirs = false;
 	bool eagerfsync = true;
 	bool eagercreate = true;
@@ -336,7 +353,6 @@ public:
 	}
 };
 
-atomic_llong eventId(0);
 
 struct cannyfs_dirreader : cannyfs_reader
 {
@@ -363,21 +379,29 @@ int cannyfs_add_write(bool defer, std::string path, function<int(int)> fun)
 
 	if (!defer) cannyfs_reader(path, JUST_BARRIER);
 
-	fileobj->lastEventId = eventIdNow;	
+	fileobj->lastEventId = eventIdNow;
+
+	auto worker = [eventIdNow, fun]() {
+		if (options.verbose) fprintf(stderr, "Doing event ID %lld\n", eventIdNow);
+		int retval = fun(eventIdNow);
+		if (options.verbose) fprintf(stderr, "Did event ID %lld with result %d\n", eventIdNow, retval);
+		retiredCount++;
+		return retval;
+	};
+
+	while (eventIdNow - retiredCount > 150)
+	{
+		usleep(100);
+	}
 
 	if (!defer)
 	{
 		lock.unlock();
-		return fun(eventIdNow);
+		return worker();
 	}
 	else
 	{
-		fileobj->ops.emplace([eventIdNow, fun]() {
-			if (options.verbose) fprintf(stderr, "Doing event ID %lld\n", eventIdNow); 
-			int retval = fun(eventIdNow);
-			if (options.verbose) fprintf(stderr, "Did event ID %lld with result %d\n", eventIdNow, retval);
-			return retval;
-		});
+		fileobj->ops.emplace(worker);
 		if (!fileobj->running)
 		{
 			// Hey, WE will make it running now.
@@ -928,7 +952,9 @@ static int cannyfs_release(const char *cpath, struct fuse_file_info *fi)
 	}
 
 	return cannyfs_add_write(options.eagerclose, cpath, fi, [](std::string path, const fuse_file_info *fi) {
-		return close(getfh(fi));
+		int fd = getfh(fi);
+		delete getcfh(fi);
+		return close(fd);
 	});
 
 	return 0;
