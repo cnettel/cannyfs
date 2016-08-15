@@ -68,7 +68,7 @@
 #include <functional>
 #include <queue>
 
-#define TBB_PREVIEW_GLOBAL_CONTROL
+#define TBB_PREVIEW_GLOBAL_CONTROL 1
 #include <tbb/global_control.h>
 
 #include <tbb/task_scheduler_init.h>
