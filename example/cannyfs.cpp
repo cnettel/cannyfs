@@ -103,7 +103,7 @@ struct cannyfs_filedata
 			function<int(void)> op = ops.back();
 			ops.pop();
 
-			locallock.release();
+			locallock.unlock();
 			op();
 			locallock.lock();
 		}
@@ -320,7 +320,7 @@ public:
 
 		if (flag != LOCK_WHOLE)
 		{
-			lock.release();
+			lock.unlock();
 		}
 
 		if (!global && options.restrictivedirs) generalwriter = new cannyfs_writer("", JUST_BARRIER, eventId);
@@ -367,7 +367,7 @@ int cannyfs_add_write(bool defer, std::string path, function<int(int)> fun)
 
 	if (!defer)
 	{
-		lock.release();
+		lock.unlock();
 		return fun(eventIdNow);
 	}
 	else
@@ -382,7 +382,7 @@ int cannyfs_add_write(bool defer, std::string path, function<int(int)> fun)
 		{
 			// Hey, WE will make it running now.
 			/*fileobj->running = true;
-			lock.release();*/
+			lock.unlock();*/
 			workQueue.enqueue([fileobj] { fileobj->run(); });
 		}
 
