@@ -780,7 +780,7 @@ static int cannyfs_utimens(const char *cpath, const struct timespec ts[2])
 		int res;
 
 		/* don't use utime/utimes since they follow symlinks */
-		res = utimensat(0, path, ts, AT_SYMLINK_NOFOLLOW);
+		res = utimensat(0, path.c_str(), ts, AT_SYMLINK_NOFOLLOW);
 		if (res == -1)
 			return -errno;
 
