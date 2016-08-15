@@ -1053,7 +1053,7 @@ static int cannyfs_setxattr(const char *path, const char *cname, const char *cva
 
 	return cannyfs_add_write(options.eagerxattr, path, [name, value, size, flags] (std::string path)
 	{
-		int res = lsetxattr(path, name, value, size, flags);
+		int res = lsetxattr(path.c_str(), name.c_str(), value.c_str(), size, flags);
 		if (res == -1)
 			return -errno;
 
@@ -1087,7 +1087,7 @@ static int cannyfs_removexattr(const char *path, const char *cname)
 	std::string name = cname;
 	return cannyfs_add_write(options.eagerxattr, path, [name](std::string path)
 	{
-		int res = lremovexattr(path, name);
+		int res = lremovexattr(path, name.c_str());
 		if (res == -1)
 			return -errno;
 
