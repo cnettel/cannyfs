@@ -953,7 +953,7 @@ static int cannyfs_release(const char *cpath, struct fuse_file_info *fi)
 
 	return cannyfs_add_write(options.eagerclose, cpath, fi, [](std::string path, const fuse_file_info *fi) {
 		int fd = getfh(fi);
-		delete getcfh(fi);
+		delete getcfh(fi->fh);
 		return close(fd);
 	});
 
