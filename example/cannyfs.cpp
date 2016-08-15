@@ -224,6 +224,7 @@ struct cannyfs_options
 	bool eagercreate = true;
 	bool ignorefsync = true;
 	bool verbose = false;
+	bool eagerxattr = true;
 	int numThreads = 16;
 } options;
 
@@ -1044,14 +1045,18 @@ static int cannyfs_fallocate(const char *cpath, int mode,
 
 #ifdef HAVE_SETXATTR
 /* xattr operations are optional and can safely be left unimplemented */
-static int cannyfs_setxattr(const char *path, const char *name, const char *value,
+static int cannyfs_setxattr(const char *path, const char *cname, const char *cvalue,
 			size_t size, int flags)
 {
-	cannyfs_immediatewriter b(path, JUST_BARRIER);
+	std::string name = cname;
+	std::string value = cvalue;
 
-	int res = lsetxattr(path, name, value, size, flags);
-	if (res == -1)
-		return -errno;
+	return cannyfs_add_write(options.eagerxattr, path, [name, value, size, flags]
+	{
+		int res = lsetxattr(path, name, value, size, flags);
+		if (res == -1)
+			return -errno;
+	});
 	return 0;
 }
 
