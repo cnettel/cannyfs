@@ -118,7 +118,7 @@ struct cannyfs_filedata
 		long long eventId = lastEventId;
 		while (firstEventId < eventId)
 		{
-			fileobj->processed.wait(locallock);
+			processed.wait(locallock);
 		}
 	}
 };
@@ -379,7 +379,7 @@ int cannyfs_add_write(bool defer, std::string path, function<int(int)> fun)
 
 	eventIdNow = ++::eventId;
 
-	if (!defer) fileobj->spinevent();
+	if (!defer) fileobj->spinevent(lock);
 
 	fileobj->lastEventId = eventIdNow;
 
