@@ -748,6 +748,7 @@ static int cannyfs_chown(const char *cpath, uid_t uid, gid_t gid)
 
 static int cannyfs_truncate(const char *path, off_t size)
 {
+	fprintf(stderr, "Truncate1?\n");
 	// TODO: FUN STUFF COULD BE DONE HERE TO AVOID WRITES
 	int res;
 
@@ -761,6 +762,7 @@ static int cannyfs_truncate(const char *path, off_t size)
 static int cannyfs_ftruncate(const char *path, off_t size,
 			 struct fuse_file_info *fi)
 {
+	fprintf(stderr, "Truncate2?\n");
 	// TODO: FUN STUFF COULD BE DONE HERE TO AVOID WRITES
 	int res;
 
