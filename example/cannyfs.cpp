@@ -68,11 +68,13 @@
 #include <functional>
 #include <queue>
 
+#define TBB_PREVIEW_GLOBAL_CONTROL
+#include <tbb/global_control.h>
+
 #include <tbb/task_scheduler_init.h>
 #include <tbb/task_arena.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/concurrent_queue.h>
-#include <tbb/global_control.h>
 
 #include <boost/lockfree/stack.hpp>
 
