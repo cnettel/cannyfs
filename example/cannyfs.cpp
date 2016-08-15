@@ -84,7 +84,7 @@ struct cannyfs_filedata
 {
 	mutex lock;
 	long long firstEventId = -1;
-	long long lastEventId = 0;
+	long long lastEventId = -1;
 	bool running = false;
 
 	// Kill it if we don't have any ops.
