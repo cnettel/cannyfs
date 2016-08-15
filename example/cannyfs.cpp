@@ -34,6 +34,9 @@
 #include <config.h>
 #endif
 
+#define HAVE_UTIMENSAT
+#define HAVE_SETXATTR
+
 #define _GNU_SOURCE
 
 #include <fuse.h>
@@ -55,7 +58,6 @@
 #include <sys/xattr.h>
 #endif
 #include <sys/file.h> /* flock(2) */
-
 
 #include <atomic>
 #include <thread>
