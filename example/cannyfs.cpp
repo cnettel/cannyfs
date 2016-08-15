@@ -464,6 +464,7 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 
 	int res;
 
+	fprintf(stderr, "lstat %s\n", path);
 	res = lstat(path, stbuf);
 	if (res == -1)
 		return -errno;
