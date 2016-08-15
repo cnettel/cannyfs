@@ -35,7 +35,7 @@
 #endif
 
 #define HAVE_UTIMENSAT
-#define HAVE_SETXATTR
+//#define HAVE_SETXATTR
 
 #define _GNU_SOURCE
 
