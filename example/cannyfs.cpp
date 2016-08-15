@@ -278,6 +278,7 @@ public:
 			if (i != data.end())
 			{
 				result = &i->second;
+				maplock.unlock();
 				lock = unique_lock<mutex>(result->lock);
 			}
 		}
@@ -294,6 +295,7 @@ public:
 			{
 				result = &data[path];
 			}
+			maplock.unlock();
 			lock = unique_lock<mutex>(result->lock);
 		}
 
@@ -812,7 +814,6 @@ static int cannyfs_open(const char *path, struct fuse_file_info *fi)
 	if (options.verbose) fprintf(stderr, "Going to open %s\n", path);
 	int fd;
 
-	// TODO: MEMORY LEAKS.
 	fi->fh = getnewfh() - fhs.begin();
 	fd = open(path, fi->flags);
 	if (fd == -1)
