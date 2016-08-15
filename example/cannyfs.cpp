@@ -207,7 +207,7 @@ struct cannyfs_options
 	bool closeverylate = false;
 	bool restrictivedirs = false;
 	bool eagerfsync = true;
-	bool eagercreate = true;
+	bool eagercreate = false;
 	bool ignorefsync = true;
 	bool verbose = true;
 	int numThreads = 16;
