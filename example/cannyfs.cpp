@@ -480,6 +480,7 @@ static int cannyfs_fgetattr(const char *path, struct stat *stbuf,
 
 	(void) path;
 
+	fprintf(stderr, "Stat %s\n", path);
 	res = fstat(getfh(fi), stbuf);
 	if (res == -1)
 		return -errno;
