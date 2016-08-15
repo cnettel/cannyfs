@@ -103,7 +103,7 @@ struct cannyfs_filedata
 		running = true;
 		while (!ops.empty())
 		{
-			function<int(void)> op = ops.back();
+			function<int(void)> op = ops.front();
 			ops.pop();
 
 			locallock.unlock();
@@ -347,7 +347,6 @@ public:
 
 	~cannyfs_writer()
 	{
-		// TODO THREAD UNSAFE?!
 		if (!lock.owns_lock()) lock.lock();
 		fileobj->firstEventId = eventId;
 		fileobj->processed.notify_all();
