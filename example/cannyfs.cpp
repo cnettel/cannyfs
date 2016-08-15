@@ -912,7 +912,7 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 
 	fd_set set;
 	FD_ZERO(&set);
-	FD_SET(newsrc.buf[0].fd, &set);
+	FD_SET(halfdst.buf[0].fd, &set);
 
 	int val = 0;
 	while (val < sz && select(FD_SETSIZE, nullptr, &set, nullptr, nullptr) <= 0)
