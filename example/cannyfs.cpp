@@ -369,8 +369,7 @@ public:
 	}
 };
 
-task_scheduler_init init();
-task_arena workQueue();
+task_arena workQueue(16);
 
 int cannyfs_add_write(bool defer, std::string path, function<int(int)> fun)
 {
