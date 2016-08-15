@@ -395,7 +395,7 @@ int cannyfs_add_write(bool defer, std::string path, function<int(int)> fun)
 		return retval;
 	};
 
-	while (eventIdNow - retiredCount > 150)
+	while (eventIdNow - retiredCount > 400)
 	{
 		usleep(100);
 	}
