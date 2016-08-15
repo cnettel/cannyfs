@@ -117,7 +117,7 @@ struct cannyfs_filedata
 struct cannyfs_filehandle
 {
 	mutex lock;
-	int fd;
+	int64_t fd;
 	int pipefds[2];
 	condition_variable opened;
 
@@ -157,7 +157,7 @@ struct cannyfs_filehandle
 		opened.notify_all();
 	}
 
-	int getfh()
+	uint64_t getfh()
 	{
 		unique_lock<mutex> locallock(lock);
 		while (fd == -1)
@@ -188,7 +188,7 @@ cannyfs_filehandle* getcfh(int fd)
 	return &fhs[fd];
 }
 
-int getfh(const fuse_file_info* fi)
+uint64_t getfh(const fuse_file_info* fi)
 {
 	return getcfh(fi->fh)->getfh();
 }
@@ -534,13 +534,14 @@ static int cannyfs_opendir(const char *path, struct fuse_file_info *fi)
 	d->offset = 0;
 	d->entry = NULL;
 
-	fi->fh = (unsigned long) d;
+	fi->fh = getnewfh() - fhs.begin();
+	getcfh(fi->fh)->setfh((unsigned long)d);
 	return 0;
 }
 
 static inline struct cannyfs_dirp *get_dirp(struct fuse_file_info *fi)
 {
-	return (struct cannyfs_dirp *) (uintptr_t) fi->fh;
+	return (struct cannyfs_dirp *) (uintptr_t) getfh(fi);
 }
 
 static int cannyfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
@@ -953,7 +954,10 @@ static int cannyfs_release(const char *cpath, struct fuse_file_info *fi)
 
 	return cannyfs_add_write(options.eagerclose, cpath, fi, [](std::string path, const fuse_file_info *fi) {
 		int fd = getfh(fi);
-		delete getcfh(fi->fh);
+		getcfh(fi->fh)->~cannyfs_filehandle();
+		// Reset object using default constructor
+		new(getcfh(fi->fh)) cannyfs_filehandle();
+		freefhs.push(fhs.begin() + fi->fh);
 		return close(fd);
 	});
 
