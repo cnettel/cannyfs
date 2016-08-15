@@ -83,12 +83,32 @@ using namespace std;
 struct cannyfs_filedata
 {
 	mutex lock;
+	long long firstEventId = -1;
 	long long lastEventId = 0;
+	bool running = false;
 
 	// Kill it if we don't have any ops.
 	// TODO: What if file is closed with close list?
 	// long long numOps;
 	condition_variable processed;
+
+	queue<function<int(void)> > ops;
+
+	void run()
+	{
+		unique_lock<mutex> locallock(this->lock);
+		running = true;
+		while (!ops.empty())
+		{
+			function<int(void)> op = ops.back();
+			ops.pop();
+
+			locallock.release();
+			op();
+			locallock.lock();
+		}
+		running = false;
+	}
 };
 
 struct cannyfs_filehandle
@@ -267,7 +287,7 @@ public:
 		if (fileobj)
 		{
 			long long eventId = fileobj->lastEventId;
-			while (waitingEvents.find(eventId) != waitingEvents.end())
+			while (fileobj->firstEventId < eventId)
 			{
 				fileobj->processed.wait(locallock);
 			}
@@ -294,8 +314,7 @@ public:
 	cannyfs_writer(std::string path, int flag, long long eventId) : eventId(eventId), global(path != "")
 	{
 		if (options.verbose) fprintf(stderr, "Entering write lock for %s\n", path.c_str());
-		generalwriter = nullptr;
-		if (global) waitingEvents.insert(eventId);
+		generalwriter = nullptr;	
 		fileobj = filemap.get(path, true, lock);
 
 		if (flag != LOCK_WHOLE)
@@ -309,9 +328,8 @@ public:
 	~cannyfs_writer()
 	{
 		// TODO THREAD UNSAFE?!
-		if (!global) waitingEvents.erase(eventId);
 		if (!lock.owns_lock()) lock.lock();
-
+		fileobj->firstEventId = eventId;
 		fileobj->processed.notify_all();
 		if (generalwriter) delete generalwriter;
 	}
@@ -333,21 +351,37 @@ public:
 task_scheduler_init init(16);
 task_arena workQueue(16);
 
-int cannyfs_add_write(bool defer, function<int(int)> fun)
+int cannyfs_add_write(bool defer, std::string path, function<int(int)> fun)
 {
-	long long eventIdNow = ++::eventId;
+	long long eventIdNow;
+
+	unique_lock<mutex> lock;
+	cannyfs_filedata* fileobj = filemap.get(path, true, lock);
+
+	eventIdNow = ++::eventId;
+
+	if (!defer) cannyfs_reader(path, JUST_BARRIER);
+
+	fileobj->lastEventId = eventIdNow;	
+
 	if (!defer)
 	{
+		lock.release();
 		return fun(eventIdNow);
 	}
 	else
 	{
-		workQueue.enqueue([eventIdNow, fun]() {
+		fileobj->ops.emplace([eventIdNow, fun]() {
 			if (options.verbose) fprintf(stderr, "Doing event ID %lld\n", eventIdNow); 
 			int retval = fun(eventIdNow);
 			if (options.verbose) fprintf(stderr, "Did event ID %lld with result %d\n", eventIdNow, retval);
 			return retval;
 		});
+		if (!fileobj->running)
+		{
+			workQueue.enqueue(fileobj->run());
+		}
+
 		return 0;
 	}
 }
@@ -375,7 +409,9 @@ int cannyfs_add_write(bool defer, std::string path1, std::string path2, function
 {
 	if (options.verbose) fprintf(stderr, "Adding write (C) for %s\n", path1.c_str());
 	return cannyfs_add_write(defer, [path1, path2, fun](int eventId)->int {
-		cannyfs_writer writer1(path1, LOCK_WHOLE, eventId);
+		//cannyfs_writer writer1(path1, LOCK_WHOLE, eventId);
+
+		// TODO: LOCKING MODEL MESSED UP
 		cannyfs_writer writer2(path2, LOCK_WHOLE, eventId);
 
 		return fun(path1, path2);
@@ -812,7 +848,7 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 		dst.buf[0].flags = (fuse_buf_flags) (FUSE_BUF_IS_FD | FUSE_BUF_FD_SEEK);
 		dst.buf[0].fd = getfh(fi);
 		dst.buf[0].pos = offset;
-
+		g
 		struct fuse_bufvec newsrc = FUSE_BUFVEC_INIT(sz);
 		newsrc.buf[0].fd = getcfh(fi->fh)->getpipefd(0);
 		newsrc.buf[0].flags = (fuse_buf_flags) (FUSE_BUF_FD_RETRY | FUSE_BUF_IS_FD);
