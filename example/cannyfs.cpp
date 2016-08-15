@@ -379,7 +379,7 @@ int cannyfs_add_write(bool defer, std::string path, function<int(int)> fun)
 		});
 		if (!fileobj->running)
 		{
-			workQueue.enqueue(fileobj->run());
+			workQueue.enqueue([fileobj] { fileobj->run(); });
 		}
 
 		return 0;
@@ -389,7 +389,7 @@ int cannyfs_add_write(bool defer, std::string path, function<int(int)> fun)
 int cannyfs_add_write(bool defer, std::string path, function<int(string)> fun)
 {
 	if (options.verbose) fprintf(stderr, "Adding write (A) for %s\n", path.c_str());
-	return cannyfs_add_write(defer, [path, fun](int eventId)->int {
+	return cannyfs_add_write(defer, path, [path, fun](int eventId)->int {
 		cannyfs_writer writer(path, LOCK_WHOLE, eventId);
 		return fun(path);
 	});
@@ -399,7 +399,7 @@ int cannyfs_add_write(bool defer, std::string path, fuse_file_info* origfi, func
 {
 	if (options.verbose) fprintf(stderr, "Adding write (B) for %s\n", path.c_str());
 	fuse_file_info fi = *origfi;
-	return cannyfs_add_write(defer, [path, fun, fi](int eventId)->int {
+	return cannyfs_add_write(defer, path, [path, fun, fi](int eventId)->int {
 		cannyfs_writer writer(path, LOCK_WHOLE, eventId);
 		return fun(path, &fi);
 	});
@@ -408,10 +408,11 @@ int cannyfs_add_write(bool defer, std::string path, fuse_file_info* origfi, func
 int cannyfs_add_write(bool defer, std::string path1, std::string path2, function<int(string, string)> fun)
 {
 	if (options.verbose) fprintf(stderr, "Adding write (C) for %s\n", path1.c_str());
-	return cannyfs_add_write(defer, [path1, path2, fun](int eventId)->int {
+	return cannyfs_add_write(defer, path2, [path1, path2, fun](int eventId)->int {
 		//cannyfs_writer writer1(path1, LOCK_WHOLE, eventId);
 
 		// TODO: LOCKING MODEL MESSED UP
+		cannyfs_reader reader(path1, JUST_BARRIER);
 		cannyfs_writer writer2(path2, LOCK_WHOLE, eventId);
 
 		return fun(path1, path2);
@@ -848,7 +849,7 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 		dst.buf[0].flags = (fuse_buf_flags) (FUSE_BUF_IS_FD | FUSE_BUF_FD_SEEK);
 		dst.buf[0].fd = getfh(fi);
 		dst.buf[0].pos = offset;
-		g
+		
 		struct fuse_bufvec newsrc = FUSE_BUFVEC_INIT(sz);
 		newsrc.buf[0].fd = getcfh(fi->fh)->getpipefd(0);
 		newsrc.buf[0].flags = (fuse_buf_flags) (FUSE_BUF_FD_RETRY | FUSE_BUF_IS_FD);
