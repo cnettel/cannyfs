@@ -150,7 +150,7 @@ struct cannyfs_filehandle
 		return pipefds[dir];
 	}
 
-	void setfh(int fd)
+	void setfh(uint64_t fd)
 	{
 		lock_guard<mutex> locallock(lock);
 		this->fd = fd;
@@ -958,6 +958,7 @@ static int cannyfs_release(const char *cpath, struct fuse_file_info *fi)
 		// Reset object using default constructor
 		new(getcfh(fi->fh)) cannyfs_filehandle();
 		freefhs.push(fhs.begin() + fi->fh);
+
 		return close(fd);
 	});
 
