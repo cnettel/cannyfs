@@ -473,7 +473,7 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 static int cannyfs_fgetattr(const char *path, struct stat *stbuf,
 			struct fuse_file_info *fi)
 {
-	cannyfs_reader b(path, JUST_BARRIER);
+	//cannyfs_reader b(path, JUST_BARRIER);
 
 	int res;
 
