@@ -289,6 +289,7 @@ public:
 			long long eventId = fileobj->lastEventId;
 			while (fileobj->firstEventId < eventId)
 			{
+				fprintf(stderr, "Lock status: %d\n", (int) locallock.owns_lock());
 				fileobj->processed.wait(locallock);
 			}
 		}
