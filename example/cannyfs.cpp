@@ -913,10 +913,8 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 	fd_set set;
 	FD_ZERO(&set);
 	FD_SET(newsrc.buf[0].fd, &set);
-	newsrc.buf[0].flags = (fuse_buf_flags)(FUSE_BUF_FD_RETRY | FUSE_BUF_IS_FD);
 
 	int val = 0;
-
 	while (val < sz && select(FD_SETSIZE, nullptr, &set, nullptr, nullptr) <= 0)
 	{
 		int ret = fuse_buf_copy(&halfdst, buf, (fuse_buf_copy_flags)0);
