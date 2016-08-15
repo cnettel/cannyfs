@@ -286,8 +286,6 @@ public:
 	}
 } filemap;
 
-set<long long> waitingEvents;
-
 struct cannyfs_reader
 {
 private:
@@ -883,7 +881,7 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 		newsrc.buf[0].fd = getcfh(fi->fh)->getpipefd(0);
 		newsrc.buf[0].flags = (fuse_buf_flags) (FUSE_BUF_FD_RETRY | FUSE_BUF_IS_FD);
 
-		return fuse_buf_copy(&dst, &newsrc, FUSE_BUF_SPLICE_NONBLOCK);
+		return fuse_buf_copy(&dst, &newsrc, (fuse_buf_copy_flags) 0);
 	});
 
 	if (toret < 0)
@@ -896,7 +894,7 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 	halfdst.buf[0].flags = (fuse_buf_flags) (FUSE_BUF_IS_FD | FUSE_BUF_FD_RETRY);
 	halfdst.buf[0].fd = getcfh(fi->fh)->getpipefd(1);
 
-	return fuse_buf_copy(&halfdst, buf, FUSE_BUF_SPLICE_NONBLOCK);
+	return fuse_buf_copy(&halfdst, buf, (fuse_buf_copy_flags) 0);
 }
 
 static int cannyfs_statfs(const char *path, struct statvfs *stbuf)
