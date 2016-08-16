@@ -380,6 +380,7 @@ public:
 	}
 };
 
+task_scheduler_init init(16);
 task_arena workQueue(16);
 
 int cannyfs_add_write_inner(bool defer, std::string path, auto fun)
