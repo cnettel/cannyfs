@@ -90,7 +90,8 @@ atomic_llong retiredCount(0);
 
 struct cannyfs_filedata
 {
-	mutex lock;
+	mutex datalock;
+	mutex oplock;
 	long long firstEventId = -1;
 	long long lastEventId = -1;
 	bool running = false;
@@ -108,7 +109,7 @@ struct cannyfs_filedata
 
 	void run()
 	{
-		unique_lock<mutex> locallock(this->lock);
+		unique_lock<mutex> locallock(this->datalock);
 		running = true;
 		while (!ops.empty())
 		{
@@ -276,9 +277,11 @@ private:
 	map<string, cannyfs_filedata> data;
 	shared_timed_mutex lock;
 public:
-	cannyfs_filedata* get(std::string path, bool always, unique_lock<mutex>& lock)
+	cannyfs_filedata* get(std::string path, bool always, unique_lock<mutex>& lock, bool lockdata = false)
 	{
 		cannyfs_filedata* result = nullptr;
+		auto locktransferline = [&] { lock = unique_lock<mutex>(lockdata ? result->oplock : result->datalock); };
+
 		{
 			shared_lock<shared_timed_mutex> maplock(this->lock);
 			auto i = data.find(path);
@@ -286,7 +289,7 @@ public:
 			{
 				result = &i->second;
 				maplock.unlock();
-				lock = unique_lock<mutex>(result->lock);
+				locktransferline();
 			}
 		}
 
@@ -303,7 +306,7 @@ public:
 				result = &data[path];
 			}
 			maplock.unlock();
-			lock = unique_lock<mutex>(result->lock);
+			locktransferline();
 		}
 
 		return result;
@@ -388,7 +391,7 @@ int cannyfs_add_write_inner(bool defer, std::string path, auto fun)
 	long long eventIdNow;
 
 	unique_lock<mutex> lock;
-	cannyfs_filedata* fileobj = filemap.get(path, true, lock);
+	cannyfs_filedata* fileobj = filemap.get(path, true, lock, defer);
 
 	eventIdNow = ++::eventId;
 
