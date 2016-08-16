@@ -104,6 +104,7 @@ struct cannyfs_filedata
 
 	struct stat ourstats = {};
 	bool created = false;
+	bool missing = false;
 
 	void run()
 	{
@@ -229,6 +230,7 @@ struct cannyfs_options
 	bool verbose = false;
 	bool eagerxattr = true;
 	bool inaccuratestat = true;
+	bool cachemissing = true;
 	int numThreads = 16;
 } options;
 
@@ -468,6 +470,11 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 
 	if (inaccurate)
 	{
+		if (options.cachemissing && b.fileobj->missing)
+		{
+			return -ENOENT;
+		}
+
 		bool wascreated = b.fileobj && b.fileobj->created;
 		b.lock.unlock();
 		if (wascreated)
@@ -481,7 +488,15 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 	
 	int res = lstat(path, stbuf);
 	if (res == -1)
+	{
+		int err = errno;
+		if (options.cachemissing && err == ENOENT)
+		{
+			cannyfs_reader b2(path, NO_BARRIER | LOCK_WHOLE);
+			b2.fileobj->missing = true;
+		}
 		return -errno;
+	}
 
 	return 0;
 }
@@ -663,6 +678,10 @@ static int cannyfs_mknod(const char *path, mode_t mode, dev_t rdev)
 static int cannyfs_mkdir(const char *path, mode_t mode)
 {
 	int res;
+	{
+		cannyfs_reader b(path, LOCK_WHOLE);
+		b.fileobj->missing = false;
+	}
 
 	res = mkdir(path, mode);
 	if (res == -1)
