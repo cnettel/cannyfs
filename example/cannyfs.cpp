@@ -824,7 +824,7 @@ static int cannyfs_create(const char *cpath, mode_t mode, struct fuse_file_info 
 	if (options.verbose) fprintf(stderr, "Going to create %s\n", cpath);
 	fi->fh = getnewfh() - fhs.begin();
 	{
-		cannyfs_reader b(path, NO_BARRIER | LOCK_WHOLE);
+		cannyfs_reader b(cpath, NO_BARRIER | LOCK_WHOLE);
 		b.fileobj->created = true;
 	}
 
