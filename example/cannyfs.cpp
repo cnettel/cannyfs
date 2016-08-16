@@ -327,7 +327,7 @@ struct cannyfs_reader
 public:
 	unique_lock<mutex> lock;
 	cannyfs_filedata* fileobj;
-	cannyfs_reader(std::string path, int flag)
+	cannyfs_reader(const std::string& path, int flag)
 	{
 		if (options.verbose) fprintf(stderr, "Waiting for reading %s\n", path.c_str());
 
@@ -357,7 +357,7 @@ private:
 	long long eventId;
 	bool global;
 public:
-	cannyfs_writer(std::string path, int flag, long long eventId) : eventId(eventId), global(path != "")
+	cannyfs_writer(const std::string& path, int flag, long long eventId) : eventId(eventId), global(path != "")
 	{
 		if (options.verbose) fprintf(stderr, "Entering write lock for %s\n", path.c_str());
 		generalwriter = nullptr;	
@@ -395,7 +395,7 @@ public:
 task_scheduler_init init(16);
 task_arena workQueue(16);
 
-int cannyfs_add_write_inner(bool defer, std::string path, auto fun)
+int cannyfs_add_write_inner(bool defer, const std::string& path, auto fun)
 {
 	long long eventIdNow;
 
@@ -444,7 +444,7 @@ int cannyfs_add_write_inner(bool defer, std::string path, auto fun)
 	}
 }
 
-int cannyfs_add_write(bool defer, std::string path, auto fun)
+int cannyfs_add_write(bool defer, const std::string& path, auto fun)
 {
 	if (options.verbose) fprintf(stderr, "Adding write (A) for %s\n", path.c_str());
 	return cannyfs_add_write_inner(defer, path, [path, fun](int eventId)->int {
@@ -453,7 +453,7 @@ int cannyfs_add_write(bool defer, std::string path, auto fun)
 	});
 }
 
-int cannyfs_add_write(bool defer, std::string path, fuse_file_info* origfi, auto fun)
+int cannyfs_add_write(bool defer, const std::string& path, fuse_file_info* origfi, auto fun)
 {
 	if (options.verbose) fprintf(stderr, "Adding write (B) for %s\n", path.c_str());
 	fuse_file_info fi = *origfi;
@@ -463,7 +463,7 @@ int cannyfs_add_write(bool defer, std::string path, fuse_file_info* origfi, auto
 	});
 }
 
-int cannyfs_add_write(bool defer, std::string path1, std::string path2, auto fun)
+int cannyfs_add_write(bool defer, const std::string& path1, const std::string& path2, auto fun)
 {
 	if (options.verbose) fprintf(stderr, "Adding write (C) for %s\n", path1.c_str());
 	return cannyfs_add_write_inner(defer, path2, [path1, path2, fun](int eventId)->int {
@@ -767,7 +767,7 @@ static int cannyfs_rename(const char *from, const char *to
 
 static int cannyfs_link(const char *cfrom, const char *cto)
 {
-	return cannyfs_add_write(options.eagerlink, cfrom, cto, [](std::string from, std::string to) {
+	return cannyfs_add_write(options.eagerlink, cfrom, cto, [](const std::string& from, const std::string& to) {
 		int res;
 
 		res = link(from.c_str(), to.c_str());
@@ -780,7 +780,7 @@ static int cannyfs_link(const char *cfrom, const char *cto)
 
 static int cannyfs_chmod(const char *cpath, mode_t mode)
 {
-	return cannyfs_add_write(options.eagerchmod, cpath, [mode](std::string path) {
+	return cannyfs_add_write(options.eagerchmod, cpath, [mode](const std::string& path) {
 		int res;
 		res = chmod(path.c_str(), mode);
 		if (res == -1)
@@ -792,7 +792,7 @@ static int cannyfs_chmod(const char *cpath, mode_t mode)
 
 static int cannyfs_chown(const char *cpath, uid_t uid, gid_t gid)
 {
-	return cannyfs_add_write(options.eagerchown, cpath, [uid, gid](std::string path) {
+	return cannyfs_add_write(options.eagerchown, cpath, [uid, gid](const std::string& path) {
 		int res;
 
 		res = lchown(path.c_str(), uid, gid);
@@ -835,7 +835,7 @@ static int cannyfs_ftruncate(const char *path, off_t size,
 #ifdef HAVE_UTIMENSAT
 static int cannyfs_utimens(const char *cpath, const struct timespec ts[2])
 {
-	return cannyfs_add_write(options.eagerutimens, cpath, [ts](std::string path) {
+	return cannyfs_add_write(options.eagerutimens, cpath, [ts](const std::string& path) {
 		int res;
 
 		/* don't use utime/utimes since they follow symlinks */
@@ -858,7 +858,7 @@ static int cannyfs_create(const char *cpath, mode_t mode, struct fuse_file_info 
 		b.fileobj->missing = false;
 	}
 
-	return cannyfs_add_write(options.eagercreate, cpath, fi, [mode](std::string path, const fuse_file_info* fi)
+	return cannyfs_add_write(options.eagercreate, cpath, fi, [mode](const std::string& path, const fuse_file_info* fi)
 	{
 		int fd = open(path.c_str(), fi->flags, mode);
 		if (fd == -1)
@@ -941,7 +941,7 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 
 	int sz = fuse_buf_size(buf);
 
-	int toret = cannyfs_add_write(true, cpath, fi, [sz, offset](std::string path, const fuse_file_info *fi) {
+	int toret = cannyfs_add_write(true, cpath, fi, [sz, offset](const std::string& path, const fuse_file_info *fi) {
 
 		struct fuse_bufvec dst = FUSE_BUFVEC_INIT(sz);
 
@@ -1020,14 +1020,14 @@ static int cannyfs_flush(const char *cpath, struct fuse_file_info *fi)
 	if (options.closeverylate)
 	{
 		// Just adding it to the close list might lock, if we don't have an fh yet
-		return cannyfs_add_write(options.eagerflush, cpath, fi, [](std::string path, const fuse_file_info *fi) {
+		return cannyfs_add_write(options.eagerflush, cpath, fi, [](const std::string& path, const fuse_file_info *fi) {
 			closes.push_back(dup(getfh(fi)));
 
 			return 0;
 		});
 	}
 
-	return cannyfs_add_write(options.eagerflush, cpath, fi, [](std::string path, const fuse_file_info *fi) {
+	return cannyfs_add_write(options.eagerflush, cpath, fi, [](const std::string& path, const fuse_file_info *fi) {
 		int res;
 
 		/* This is called from every close on an open file, so call the
@@ -1048,7 +1048,7 @@ static int cannyfs_release(const char *cpath, struct fuse_file_info *fi)
 	if (options.closeverylate)
 	{
 		// Just adding it to the close list might lock, if we don't have an fh yet
-		return cannyfs_add_write(options.eagerclose, cpath, fi, [](std::string path, const fuse_file_info *fi) {
+		return cannyfs_add_write(options.eagerclose, cpath, fi, [](const std::string& path, const fuse_file_info *fi) {
 			closes.push_back(dup(getfh(fi)));
 
 			// TODO: Adjust return value if dup fails?
@@ -1056,7 +1056,7 @@ static int cannyfs_release(const char *cpath, struct fuse_file_info *fi)
 		});
 	}
 
-	return cannyfs_add_write(options.eagerclose, cpath, fi, [](std::string path, const fuse_file_info *fi) {
+	return cannyfs_add_write(options.eagerclose, cpath, fi, [](const std::string& path, const fuse_file_info *fi) {
 		int fd = getfh(fi);
 		getcfh(fi->fh)->~cannyfs_filehandle();
 		// Reset object using default constructor
@@ -1074,7 +1074,7 @@ static int cannyfs_fsync(const char *cpath, int isdatasync,
 {
 	if (options.ignorefsync) return 0;
 
-	return cannyfs_add_write(options.eagerfsync, cpath, fi, [isdatasync](std::string path, const fuse_file_info *fi) {
+	return cannyfs_add_write(options.eagerfsync, cpath, fi, [isdatasync](const std::string& path, const fuse_file_info *fi) {
 		int res;
 		(void)path;
 
@@ -1100,7 +1100,7 @@ static int cannyfs_fallocate(const char *cpath, int mode,
 	if (mode)
 		return -EOPNOTSUPP;
 
-	return cannyfs_add_write(options.eagerchown, cpath, fi, [mode, offset, length](std::string path, struct fuse_file_info *fi) {
+	return cannyfs_add_write(options.eagerchown, cpath, fi, [mode, offset, length](const std::string& path, struct fuse_file_info *fi) {
 		return -posix_fallocate(getfh(fi), offset, length);
 	}
 }
@@ -1114,7 +1114,7 @@ static int cannyfs_setxattr(const char *path, const char *cname, const char *cva
 	std::string name = cname;
 	std::string value = cvalue;
 
-	return cannyfs_add_write(options.eagerxattr, path, [name, value, size, flags] (std::string path)
+	return cannyfs_add_write(options.eagerxattr, path, [name, value, size, flags] (const std::string& path)
 	{
 		int res = lsetxattr(path.c_str(), name.c_str(), value.c_str(), size, flags);
 		if (res == -1)
@@ -1148,7 +1148,7 @@ static int cannyfs_listxattr(const char *path, char *list, size_t size)
 static int cannyfs_removexattr(const char *path, const char *cname)
 {
 	std::string name = cname;
-	return cannyfs_add_write(options.eagerxattr, path, [name](std::string path)
+	return cannyfs_add_write(options.eagerxattr, path, [name](const std::string& path)
 	{
 		int res = lremovexattr(path.c_str(), name.c_str());
 		if (res == -1)
