@@ -286,7 +286,7 @@ private:
 	map<string, cannyfs_filedata, comp> data;
 	shared_timed_mutex lock;
 public:
-	cannyfs_filedata* get(std::string path, bool always, unique_lock<mutex>& lock, bool lockdata = false)
+	cannyfs_filedata* get(const std::string&& path, bool always, unique_lock<mutex>& lock, bool lockdata = false)
 	{
 		cannyfs_filedata* result = nullptr;
 		auto locktransferline = [&] { lock = unique_lock<mutex>(lockdata ? result->oplock : result->datalock); };
@@ -416,6 +416,7 @@ int cannyfs_add_write_inner(bool defer, std::string path, auto fun)
 		return retval;
 	};
 
+	// TODO: NOT ALL EVENTS ARE RETIRED
 	fprintf(stderr, "In flight %lld\n", eventIdNow - retiredCount);
 
 	while (eventIdNow - retiredCount > 1400)
