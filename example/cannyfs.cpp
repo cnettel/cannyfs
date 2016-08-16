@@ -840,6 +840,7 @@ static int cannyfs_create(const char *cpath, mode_t mode, struct fuse_file_info 
 	{
 		cannyfs_reader b(cpath, NO_BARRIER | LOCK_WHOLE);
 		b.fileobj->created = true;
+		b.fileobj->missing = false;
 	}
 
 	return cannyfs_add_write(options.eagercreate, cpath, fi, [mode](std::string path, const fuse_file_info* fi)
