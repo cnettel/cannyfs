@@ -104,8 +104,8 @@ struct cannyfs_filedata
 	queue<function<int(void)> > ops;
 
 	struct stat ourstats = {};
-	atomic_bool created(false);
-	atomic_bool missing(false);
+	atomic_bool created;
+	atomic_bool missing;
 
 	void run()
 	{
