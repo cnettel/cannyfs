@@ -220,7 +220,7 @@ struct cannyfs_options
 	bool eagerchmod = true;
 	bool veryeageraccess = true;
 	bool eageraccess = true;
-	bool eagerutimens = true;
+	bool eagerutimens = false;
 	bool eagerchown = true;
 	bool eagerclose = true;
 	bool closeverylate = false;
