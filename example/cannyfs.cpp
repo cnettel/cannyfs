@@ -102,6 +102,9 @@ struct cannyfs_filedata
 
 	queue<function<int(void)> > ops;
 
+	struct stat ourstats = {};
+	bool created = false;
+
 	void run()
 	{
 		unique_lock<mutex> locallock(this->lock);
@@ -225,12 +228,14 @@ struct cannyfs_options
 	bool ignorefsync = true;
 	bool verbose = false;
 	bool eagerxattr = true;
+	bool inaccuratestat = true;
 	int numThreads = 16;
 } options;
 
 
+const int NO_BARRIER = 1;
 const int JUST_BARRIER = 0;
-const int LOCK_WHOLE = 1;
+const int LOCK_WHOLE = 2;
 
 
 void cannyfs_reporterror()
@@ -305,9 +310,8 @@ public:
 
 struct cannyfs_reader
 {
-private:
-	unique_lock<mutex> lock;
 public:
+	unique_lock<mutex> lock;
 	cannyfs_filedata* fileobj;
 	cannyfs_reader(std::string path, int flag)
 	{
@@ -316,12 +320,12 @@ public:
 		unique_lock<mutex> locallock;
 		fileobj = filemap.get(path, flag == LOCK_WHOLE, locallock);
 
-		if (fileobj)
+		if (!(flag & NO_BARRIER) && fileobj)
 		{
 			fileobj->spinevent(locallock);
 		}
 
-		if (flag == LOCK_WHOLE)
+		if (flag & LOCK_WHOLE)
 		{
 			swap(lock, locallock);
 		}
@@ -460,12 +464,26 @@ int cannyfs_add_write(bool defer, std::string path1, std::string path2, function
 
 static int cannyfs_getattr(const char *path, struct stat *stbuf)
 {
-	cannyfs_reader b(path, JUST_BARRIER);
-
-	int res;
+	bool inaccurate = options.inaccuratestat;
+	cannyfs_reader b(path, inaccurate ? (NO_BARRIER | LOCK_WHOLE) : JUST_BARRIER);
 
 	fprintf(stderr, "lstat %s\n", path);
-	res = lstat(path, stbuf);
+	
+
+	if (inaccurate)
+	{
+		bool wascreated = b.fileobj->created;
+		b.lock.unlock();
+		if (wascreated)
+		{
+			*stbuf = {};
+			stbuf->st_mode = S_IFREG | S_IRUSR | S_IWUSR;
+
+			return 0;
+		}
+	}
+	
+	int res = lstat(path, stbuf);
 	if (res == -1)
 		return -errno;
 
@@ -475,14 +493,14 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 static int cannyfs_fgetattr(const char *path, struct stat *stbuf,
 			struct fuse_file_info *fi)
 {
-	//cannyfs_reader b(path, JUST_BARRIER);
+	cannyfs_reader b(path, JUST_BARRIER);
 
 	int res;
 
 	(void) path;
 
 	fprintf(stderr, "Stat %s\n", path);
-	res = fstat(getfh(fi), stbuf);
+	res = fstat(getfh(fi, true), stbuf);
 	if (res == -1)
 		return -errno;
 
