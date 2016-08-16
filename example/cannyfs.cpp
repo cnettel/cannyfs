@@ -104,8 +104,8 @@ struct cannyfs_filedata
 	queue<function<int(void)> > ops;
 
 	struct stat ourstats = {};
-	atomic_bool created = false;
-	atomic_bool missing = false;
+	atomic_bool created(false);
+	atomic_bool missing(false);
 
 	void run()
 	{
@@ -507,7 +507,7 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 		int err = errno;
 		if (options.cachemissing && err == ENOENT)
 		{
-			cannyfs_reader b2(path, inaccurate ? (NO_BARRIER | LOCK_WHOLE) : JUST_BARRIER);
+			cannyfs_reader b2(path, NO_BARRIER | LOCK_WHOLE);
 			b.fileobj->missing = true;
 		}
 		return -errno;
