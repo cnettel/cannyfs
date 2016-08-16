@@ -507,7 +507,8 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 		int err = errno;
 		if (options.cachemissing && err == ENOENT)
 		{
-			b2.fileobj->missing = true;
+			cannyfs_reader b2(path, inaccurate ? (NO_BARRIER | LOCK_WHOLE) : JUST_BARRIER);
+			b.fileobj->missing = true;
 		}
 		return -errno;
 	}
