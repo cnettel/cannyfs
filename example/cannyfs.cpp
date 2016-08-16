@@ -104,8 +104,8 @@ struct cannyfs_filedata
 	queue<function<int(void)> > ops;
 
 	struct stat ourstats = {};
-	bool created = false;
-	bool missing = false;
+	atomic<bool> created = false;
+	atomic<bool> missing = false;
 
 	void run()
 	{
@@ -332,7 +332,7 @@ public:
 		if (options.verbose) fprintf(stderr, "Waiting for reading %s\n", path.c_str());
 
 		unique_lock<mutex> locallock;
-		fileobj = filemap.get(path, flag & LOCK_WHOLE, locallock);
+		fileobj = filemap.get(path, flag & LOCK_WHOLE, locallock, flag & NO_BARRIER);
 
 		if (!(flag & NO_BARRIER) && fileobj)
 		{
@@ -507,7 +507,6 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 		int err = errno;
 		if (options.cachemissing && err == ENOENT)
 		{
-			cannyfs_reader b2(path, NO_BARRIER | LOCK_WHOLE);
 			b2.fileobj->missing = true;
 		}
 		return -errno;
