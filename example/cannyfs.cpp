@@ -271,10 +271,19 @@ public:
 
 vector<cannyfs_closer> closes;
 
+struct comp {
+	bool operator()(const std::string& lhs, const std::string& rhs)
+	{
+		if (lhs.length() != rhs.length())
+			return lhs.length() < rhs.length();
+		return lhs < rhs;
+	}
+};
+
 struct cannyfs_filemap
 {
 private:
-	map<string, cannyfs_filedata> data;
+	map<string, cannyfs_filedata, comp> data;
 	shared_timed_mutex lock;
 public:
 	cannyfs_filedata* get(std::string path, bool always, unique_lock<mutex>& lock, bool lockdata = false)
