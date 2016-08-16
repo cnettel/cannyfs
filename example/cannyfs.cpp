@@ -476,6 +476,7 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 		b.lock.unlock();
 		if (wascreated)
 		{
+			fprintf(stderr, "%s was created, faking stat\n", path);
 			*stbuf = {};
 			stbuf->st_mode = S_IFREG | S_IRUSR | S_IWUSR;
 
