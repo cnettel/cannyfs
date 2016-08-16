@@ -424,7 +424,7 @@ int cannyfs_add_write_inner(bool defer, std::string path, auto fun)
 		{
 			// Hey, WE will make it running now.
 			fileobj->running = true;
-			/*lock.unlock();*/
+			lock.unlock();
 			workQueue.enqueue([fileobj] { fileobj->run(); });
 		}
 
