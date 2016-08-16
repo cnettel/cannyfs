@@ -1063,8 +1063,6 @@ static int cannyfs_release(const char *cpath, struct fuse_file_info *fi)
 		new(getcfh(fi->fh)) cannyfs_filehandle();
 		freefhs.push(fhs.begin() + fi->fh);
 
-		sleep(1);
-
 		return close(fd);
 	});
 
