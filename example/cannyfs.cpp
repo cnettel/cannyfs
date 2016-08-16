@@ -470,9 +470,9 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 	fprintf(stderr, "lstat %s\n", path);
 	
 
-	if (inaccurate)
+	if (inaccurate && b.fileobj)
 	{
-		bool wascreated = b.fileobj && b.fileobj->created;
+		bool wascreated = b.fileobj->created;
 		b.lock.unlock();
 		if (wascreated)
 		{
