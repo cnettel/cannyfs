@@ -382,7 +382,7 @@ public:
 
 task_arena workQueue(16);
 
-int cannyfs_add_write(bool defer, std::string path, auto fun)
+int cannyfs_add_write_inner(bool defer, std::string path, auto fun)
 {
 	long long eventIdNow;
 
@@ -432,7 +432,7 @@ int cannyfs_add_write(bool defer, std::string path, auto fun)
 int cannyfs_add_write(bool defer, std::string path, auto fun)
 {
 	if (options.verbose) fprintf(stderr, "Adding write (A) for %s\n", path.c_str());
-	return cannyfs_add_write(defer, path, [path, fun](int eventId)->int {
+	return cannyfs_add_write_inner(defer, path, [path, fun](int eventId)->int {
 		cannyfs_writer writer(path, LOCK_WHOLE, eventId);
 		return fun(path);
 	});
@@ -442,7 +442,7 @@ int cannyfs_add_write(bool defer, std::string path, fuse_file_info* origfi, auto
 {
 	if (options.verbose) fprintf(stderr, "Adding write (B) for %s\n", path.c_str());
 	fuse_file_info fi = *origfi;
-	return cannyfs_add_write(defer, path, [path, fun, fi](int eventId)->int {
+	return cannyfs_add_write_inner(defer, path, [path, fun, fi](int eventId)->int {
 		cannyfs_writer writer(path, LOCK_WHOLE, eventId);
 		return fun(path, &fi);
 	});
@@ -451,7 +451,7 @@ int cannyfs_add_write(bool defer, std::string path, fuse_file_info* origfi, auto
 int cannyfs_add_write(bool defer, std::string path1, std::string path2, auto fun)
 {
 	if (options.verbose) fprintf(stderr, "Adding write (C) for %s\n", path1.c_str());
-	return cannyfs_add_write(defer, path2, [path1, path2, fun](int eventId)->int {
+	return cannyfs_add_write_inner(defer, path2, [path1, path2, fun](int eventId)->int {
 		//cannyfs_writer writer1(path1, LOCK_WHOLE, eventId);
 
 		// TODO: LOCKING MODEL MESSED UP
