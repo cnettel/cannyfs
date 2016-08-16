@@ -467,16 +467,12 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 	bool inaccurate = options.inaccuratestat;
 	cannyfs_reader b(path, inaccurate ? (NO_BARRIER | LOCK_WHOLE) : JUST_BARRIER);
 
-	fprintf(stderr, "lstat %s\n", path);
-	
-
 	if (inaccurate)
 	{
 		bool wascreated = b.fileobj && b.fileobj->created;
 		b.lock.unlock();
 		if (wascreated)
 		{
-			fprintf(stderr, "%s was created, faking stat\n", path);
 			*stbuf = {};
 			stbuf->st_mode = S_IFREG | S_IRUSR | S_IWUSR;
 
