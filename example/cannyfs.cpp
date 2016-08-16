@@ -318,7 +318,7 @@ public:
 		if (options.verbose) fprintf(stderr, "Waiting for reading %s\n", path.c_str());
 
 		unique_lock<mutex> locallock;
-		fileobj = filemap.get(path, flag == LOCK_WHOLE, locallock);
+		fileobj = filemap.get(path, flag & LOCK_WHOLE, locallock);
 
 		if (!(flag & NO_BARRIER) && fileobj)
 		{
@@ -470,9 +470,9 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 	fprintf(stderr, "lstat %s\n", path);
 	
 
-	if (inaccurate && b.fileobj)
+	if (inaccurate)
 	{
-		bool wascreated = b.fileobj->created;
+		bool wascreated = b.fileobj && b.fileobj->created;
 		b.lock.unlock();
 		if (wascreated)
 		{
@@ -822,6 +822,10 @@ static int cannyfs_create(const char *cpath, mode_t mode, struct fuse_file_info 
 {
 	if (options.verbose) fprintf(stderr, "Going to create %s\n", cpath);
 	fi->fh = getnewfh() - fhs.begin();
+	{
+		cannyfs_reader b(path, NO_BARRIER | LOCK_WHOLE);
+		b.fileobj->created = true;
+	}
 
 	return cannyfs_add_write(options.eagercreate, cpath, fi, [mode](std::string path, const fuse_file_info* fi)
 	{
