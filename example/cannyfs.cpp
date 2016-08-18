@@ -165,7 +165,7 @@ struct cannyfs_filehandle
 		{
 			// TODO: CHECK ERRORS.
 			pipe(pipefds);
-			fcntl(pipefds[0], F_SETPIPE_SZ, 1048576);
+			//fcntl(pipefds[0], F_SETPIPE_SZ, 131072);
 		}
 
 		return pipefds[dir];
