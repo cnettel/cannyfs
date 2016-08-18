@@ -163,7 +163,9 @@ struct cannyfs_filehandle
 		lock_guard<mutex> locallock(lock);
 		if (pipefds[0] == -1)
 		{
+			// TODO: CHECK ERRORS.
 			pipe(pipefds);
+			fcntl(pipefds[0], F_SETPIPE_SZ, 1048576);
 		}
 
 		return pipefds[dir];
@@ -840,7 +842,6 @@ static int cannyfs_utimens(const char *cpath, const struct timespec ts[2])
 
 		/* don't use utime/utimes since they follow symlinks */
 		res = utimensat(0, path.c_str(), ts, AT_SYMLINK_NOFOLLOW);
-		usleep(20000);
 		if (res == -1)
 			return -errno;
 
