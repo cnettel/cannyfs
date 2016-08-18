@@ -421,8 +421,9 @@ int cannyfs_add_write_inner(bool defer, const std::string& path, auto fun)
 	// TODO: NOT ALL EVENTS ARE RETIRED
 	//fprintf(stderr, "In flight %lld\n", eventIdNow - retiredCount);
 
-	while (eventIdNow - retiredCount > 1400)
+	while (eventIdNow - retiredCount > 400)
 	{
+		fprintf(stderr, "Stalling for time...\n");
 		usleep(100);
 	}
 
