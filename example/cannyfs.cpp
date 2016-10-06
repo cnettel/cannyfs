@@ -508,7 +508,7 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 
 		if (options.assumecreateddirempty)
 		{
-			cannyfs_reader parentdata(::path(path).parent_path, JUST_BARRIER | LOCK_WHOLE);
+			cannyfs_reader parentdata(::path(path).parent_path().generic_string(), JUST_BARRIER | LOCK_WHOLE);
 
 			// If the parent dir was missing or is known not to exist, we can safely (?) assume that the subentry does not exist unless WE created it
 			if (parentdata.fileobj && (parentdata.fileobj->missing || parentdata.fileobj->created))
