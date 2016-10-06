@@ -294,7 +294,7 @@ public:
 	cannyfs_filedata* get(const std::string& path, bool always, unique_lock<mutex>& lock, bool lockdata = false)
 	{
 		cannyfs_filedata* result = nullptr;
-		auto locktransferline = [&] { lock = unique_lock<mutex>(lockdata ? result->oplock : result->datalock); };
+		auto locktransferline = [&] { lock = unique_lock<mutex>(lockdata ? result->datalock : result->oplock); };
 
 		{
 			shared_lock<shared_timed_mutex> maplock(this->lock);
