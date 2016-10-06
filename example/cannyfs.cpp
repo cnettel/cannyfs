@@ -79,9 +79,11 @@
 #include <tbb/concurrent_queue.h>
 
 #include <boost/lockfree/stack.hpp>
+#include <boost/filesystem.hpp>
 
 using namespace tbb;
 using namespace boost::lockfree;
+using namespace boost::filesystem;
 
 using namespace std;
 
@@ -92,8 +94,8 @@ struct cannyfs_filedata
 {
 	mutex datalock;
 	mutex oplock;
-	long long firstEventId = -1;
-	long long lastEventId = -1;
+	atomic_llong firstEventId = -1;
+	atomic_llong lastEventId = -1;
 	bool running = false;
 
 	// Kill it if we don't have any ops.
@@ -234,6 +236,7 @@ struct cannyfs_options
 	bool eagerxattr = true;
 	bool inaccuratestat = true;
 	bool cachemissing = true;
+	bool assumecreateddirempty = true;
 	int numThreads = 16;
 } options;
 
@@ -402,7 +405,7 @@ int cannyfs_add_write_inner(bool defer, const std::string& path, auto fun)
 	long long eventIdNow;
 
 	unique_lock<mutex> lock;
-	cannyfs_filedata* fileobj = filemap.get(path, true, lock, defer);
+	cannyfs_filedata* fileobj = filemap.get(path, true, lock, true);
 
 	eventIdNow = ++::eventId;
 
@@ -488,13 +491,14 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 
 	if (inaccurate)
 	{
-		if (options.cachemissing && b.fileobj->missing)
+		if (options.cachemissing && b.fileobj && b.fileobj->missing)
 		{
 			return -ENOENT;
 		}
 
 		bool wascreated = b.fileobj && b.fileobj->created;
 		b.lock.unlock();
+
 		if (wascreated)
 		{
 			*stbuf = {};
@@ -502,8 +506,18 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 
 			return 0;
 		}
+
+		if (options.assumecreateddirempty)
+		{
+			cannyfs_reader parentdata(::path(path).parent_path, JUST_BARRIER | LOCK_WHOLE);
+
+			// If the parent dir was missing or is known not to exist, we can safely (?) assume that the subentry does not exist unless WE created it
+			if (parentdata.fileobj && (parentdata.fileobj->missing || parentdata.fileobj->created))
+			{
+				return -ENOENT;
+			}
+		}
 	}
-	
 	int res = lstat(path, stbuf);
 	if (res == -1)
 	{
@@ -698,7 +712,8 @@ static int cannyfs_mkdir(const char *path, mode_t mode)
 	int res;
 	{
 		cannyfs_reader b(path, LOCK_WHOLE);
-		b.fileobj->missing = false;
+		b.fileobj->missing = false; 
+		b.fileobj->created = true;
 	}
 
 	res = mkdir(path, mode);
