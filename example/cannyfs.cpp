@@ -107,6 +107,7 @@ struct cannyfs_filedata
 	struct stat ourstats = {};
 	atomic_bool created;
 	atomic_bool missing;
+	atomic_bool knowndir;
 
 	void run()
 	{
@@ -501,7 +502,7 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 		if (wascreated)
 		{
 			*stbuf = {};
-			stbuf->st_mode = S_IFREG | S_IRUSR | S_IWUSR;
+			stbuf->st_mode = S_IFREG | S_IRUSR | S_IWUSR | ((b.fileobj->knowndir) ? S_ISDIR : 0);
 
 			return 0;
 		}
@@ -713,6 +714,7 @@ static int cannyfs_mkdir(const char *path, mode_t mode)
 		cannyfs_reader b(path, LOCK_WHOLE);
 		b.fileobj->missing = false; 
 		b.fileobj->created = true;
+		b.fileobj->knowndir = true;
 	}
 
 	res = mkdir(path, mode);
