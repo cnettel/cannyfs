@@ -82,7 +82,6 @@
 #include <boost/filesystem.hpp>
 
 using namespace tbb;
-using namespace boost::lockfree;
 using namespace boost::filesystem;
 
 using namespace std;
@@ -194,7 +193,7 @@ struct cannyfs_filehandle
 
 typedef concurrent_vector<cannyfs_filehandle> fhstype;
 fhstype fhs;
-stack<fhstype::iterator> freefhs(16);
+boost::lockfree::stack<fhstype::iterator> freefhs(16);
 
 fhstype::iterator getnewfh()
 {
