@@ -94,8 +94,8 @@ struct cannyfs_filedata
 {
 	mutex datalock;
 	mutex oplock;
-	atomic_llong firstEventId = -1;
-	atomic_llong lastEventId = -1;
+	atomic_llong firstEventId = (const long long) -1;
+	atomic_llong lastEventId = (const long long) -1;
 	bool running = false;
 
 	// Kill it if we don't have any ops.
