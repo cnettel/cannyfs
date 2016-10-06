@@ -502,7 +502,7 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 		if (wascreated)
 		{
 			*stbuf = {};
-			stbuf->st_mode = S_IFREG | S_IRUSR | S_IWUSR | ((b.fileobj->knowndir) ? S_IFDIR : 0);
+			stbuf->st_mode = S_IRUSR | S_IWUSR | ((b.fileobj->knowndir) ? S_IFDIR : S_IFREG);
 
 			return 0;
 		}
