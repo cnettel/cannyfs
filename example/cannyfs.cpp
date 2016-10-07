@@ -312,7 +312,7 @@ public:
 			}
 			else
 			{
-				result = const_cast<cannyfs_filedata*>(&(data.emplace(path).first));
+				result = const_cast<cannyfs_filedata*>(&(*data.emplace(path).first));
 			}
 			maplock.unlock();
 			locktransferline();
