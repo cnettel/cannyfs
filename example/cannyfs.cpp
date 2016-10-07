@@ -296,7 +296,7 @@ public:
 			auto i = data.find(path);
 			if (i != data.end())
 			{
-				result = &i->second;
+				result = const_cast<cannyfs_filedata*>(&*i);
 				maplock.unlock();
 				locktransferline();
 			}
@@ -308,11 +308,11 @@ public:
 			auto i = data.find(path);
 			if (i != data.end())
 			{
-				result = &i->second;
+				result = const_cast<cannyfs_filedata*>(&*i);
 			}
 			else
 			{
-				result = &data.emplace(cannyfs_filedata(path));
+				result = const_cast<cannyfs_filedata*>(&(data.emplace(path).first));
 			}
 			maplock.unlock();
 			locktransferline();
