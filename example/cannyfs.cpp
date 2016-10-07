@@ -82,7 +82,7 @@
 #include <boost/filesystem.hpp>
 
 using namespace tbb;
-using namespace boost::filesystem;
+namespace bf = boost::filesystem;
 
 using namespace std;
 
@@ -91,7 +91,7 @@ atomic_llong retiredCount(0);
 
 struct cannyfs_filedata
 {
-	const path path;
+	const bf::path path;
 
 	mutex datalock;
 	mutex oplock;
@@ -115,7 +115,7 @@ struct cannyfs_filedata
 	{
 	}
 
-	cannyfs_filedata(const class path& name) : path(name)
+	cannyfs_filedata(const bf::path& name) : path(name)
 	{
 	}
 
@@ -286,7 +286,7 @@ private:
 	set<cannyfs_filedata, comp> data;
 	shared_timed_mutex lock;
 public:
-	cannyfs_filedata* get(const path& path, bool always, unique_lock<mutex>& lock, bool lockdata = false)
+	cannyfs_filedata* get(const bf::path& path, bool always, unique_lock<mutex>& lock, bool lockdata = false)
 	{
 		cannyfs_filedata* result = nullptr;
 		auto locktransferline = [&] { lock = unique_lock<mutex>(lockdata ? result->datalock : result->oplock); };
@@ -524,7 +524,7 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 
 		if (options.assumecreateddirempty)
 		{
-			cannyfs_reader parentdata(::path(path).parent_path().generic_string(), JUST_BARRIER | LOCK_WHOLE);
+			cannyfs_reader parentdata(bf::path(path).parent_path().generic_string(), JUST_BARRIER | LOCK_WHOLE);
 
 			// If the parent dir was missing or is known not to exist, we can safely (?) assume that the subentry does not exist unless WE created it
 			if (parentdata.fileobj && (parentdata.fileobj->missing || parentdata.fileobj->created))
