@@ -327,7 +327,7 @@ struct cannyfs_reader
 public:
 	unique_lock<mutex> lock;
 	cannyfs_filedata* fileobj;
-	cannyfs_reader(const std::string& path, int flag)
+	cannyfs_reader(const bf::path&& path, int flag)
 	{
 		if (options.verbose) fprintf(stderr, "Waiting for reading %s\n", path.c_str());
 
@@ -397,7 +397,7 @@ void cannyfs_filedata::run()
 	if (options.eagermkdir)
 	{
 		// If we create dirs willy-nilly, we need to wait before we do stuff to entries within those dirs
-		cannyfs_reader parentdir(path.parent_path, JUST_BARRIER);
+		cannyfs_reader parentdir(path.parent_path(), JUST_BARRIER);
 	}
 	unique_lock<mutex> locallock(this->datalock);
 	running = true;
