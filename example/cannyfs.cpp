@@ -115,7 +115,7 @@ struct cannyfs_filedata
 	{
 	}
 
-	cannyfs_filedata(const path& name) : path(name)
+	cannyfs_filedata(const class path& name) : path(name)
 	{
 	}
 
@@ -731,7 +731,7 @@ static int cannyfs_mkdir(const char *path, mode_t mode)
 		b.fileobj->knowndir = true;
 	}
 
-	return cannyfs_add_write(options.eagermkdir, path, [int mode](const std::string& path) {
+	return cannyfs_add_write(options.eagermkdir, path, [mode](const std::string& path) {
 		int res = mkdir(path, mode);
 		if (res == -1)
 			return -errno;
