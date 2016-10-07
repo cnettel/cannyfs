@@ -91,6 +91,8 @@ atomic_llong retiredCount(0);
 
 struct cannyfs_filedata
 {
+	const path path;
+
 	mutex datalock;
 	mutex oplock;
 	atomic_llong firstEventId{ -1 };
@@ -109,21 +111,15 @@ struct cannyfs_filedata
 	atomic_bool missing{ false };
 	atomic_bool knowndir{ false };
 
-	void run()
+	cannyfs_filedata(const string& name) : path(name)
 	{
-		unique_lock<mutex> locallock(this->datalock);
-		running = true;
-		while (!ops.empty())
-		{
-			function<int(void)> op = ops.front();
-			ops.pop();
-
-			locallock.unlock();
-			op();
-			locallock.lock();
-		}
-		running = false;
 	}
+
+	cannyfs_filedata(const path& name) : path(name)
+	{
+	}
+
+	void run();
 
 	void spinevent(unique_lock<mutex>& locallock)
 	{
@@ -223,6 +219,7 @@ struct cannyfs_options
 	bool eagerlink = true;
 	bool eagerchmod = true;
 	bool veryeageraccess = true;
+	bool eagermkdir = true;
 	bool eageraccess = true;
 	bool eagerutimens = true;
 	bool eagerchown = true;
@@ -277,21 +274,19 @@ public:
 vector<cannyfs_closer> closes;
 
 struct comp {
-	bool operator()(const std::string& lhs, const std::string& rhs)
+	bool operator()(const cannyfs_filedata& lhs, const cannyfs_filedata& rhs)
 	{
-		if (lhs.length() != rhs.length())
-			return lhs.length() < rhs.length();
-		return lhs < rhs;
+		return lhs.path < rhs.path;
 	}
 };
 
 struct cannyfs_filemap
 {
 private:
-	map<string, cannyfs_filedata, comp> data;
+	set<string, cannyfs_filedata, comp> data;
 	shared_timed_mutex lock;
 public:
-	cannyfs_filedata* get(const std::string& path, bool always, unique_lock<mutex>& lock, bool lockdata = false)
+	cannyfs_filedata* get(const path& path, bool always, unique_lock<mutex>& lock, bool lockdata = false)
 	{
 		cannyfs_filedata* result = nullptr;
 		auto locktransferline = [&] { lock = unique_lock<mutex>(lockdata ? result->datalock : result->oplock); };
@@ -317,7 +312,7 @@ public:
 			}
 			else
 			{
-				result = &data[path];
+				result = &data.emplace(cannyfs_filedata(path));
 			}
 			maplock.unlock();
 			locktransferline();
@@ -397,6 +392,27 @@ public:
 	}
 };
 
+void cannyfs_filedata::run()
+{
+	if (options.eagermkdir)
+	{
+		// If we create dirs willy-nilly, we need to wait before we do stuff to entries within those dirs
+		cannyfs_reader parentdir(path.parent_path, JUST_BARRIER);
+	}
+	unique_lock<mutex> locallock(this->datalock);
+	running = true;
+	while (!ops.empty())
+	{
+		function<int(void)> op = ops.front();
+		ops.pop();
+
+		locallock.unlock();
+		op();
+		locallock.lock();
+	}
+	running = false;
+}
+
 task_scheduler_init init(16);
 task_arena workQueue(16);
 
@@ -426,7 +442,6 @@ int cannyfs_add_write_inner(bool defer, const std::string& path, auto fun)
 
 	while (eventIdNow - retiredCount > 400)
 	{
-		fprintf(stderr, "Stalling for time...\n");
 		usleep(100);
 	}
 
@@ -708,8 +723,7 @@ static int cannyfs_mknod(const char *path, mode_t mode, dev_t rdev)
 }
 
 static int cannyfs_mkdir(const char *path, mode_t mode)
-{
-	int res;
+{	
 	{
 		cannyfs_reader b(path, LOCK_WHOLE);
 		b.fileobj->missing = false; 
@@ -717,11 +731,13 @@ static int cannyfs_mkdir(const char *path, mode_t mode)
 		b.fileobj->knowndir = true;
 	}
 
-	res = mkdir(path, mode);
-	if (res == -1)
-		return -errno;
+	return cannyfs_add_write(options.eagermkdir, path, [int mode](const std::string& path) {
+		int res = mkdir(path, mode);
+		if (res == -1)
+			return -errno;
 
-	return 0;
+		return 0;
+	});
 }
 
 static int cannyfs_unlink(const char *path)
@@ -729,13 +745,16 @@ static int cannyfs_unlink(const char *path)
 	// We should KILL all pending IOs, not let them go through to some corpse. Or, well,
 	// we should have a flag to do that.
 	// TODO: cannyfs_clear(path);
-	int res;
 
-	res = unlink(path);
-	if (res == -1)
-		return -errno;
+	return cannyfs_add_write(false, path, [](const std::string& path) {
+		int res;
 
-	return 0;
+		res = unlink(path);
+		if (res == -1)
+			return -errno;
+
+		return 0;
+	});
 }
 
 static int cannyfs_rmdir(const char *path)
