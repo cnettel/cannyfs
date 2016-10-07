@@ -283,7 +283,7 @@ struct comp {
 struct cannyfs_filemap
 {
 private:
-	set<string, cannyfs_filedata, comp> data;
+	set<cannyfs_filedata, comp> data;
 	shared_timed_mutex lock;
 public:
 	cannyfs_filedata* get(const path& path, bool always, unique_lock<mutex>& lock, bool lockdata = false)
