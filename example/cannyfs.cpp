@@ -732,7 +732,7 @@ static int cannyfs_mkdir(const char *path, mode_t mode)
 	}
 
 	return cannyfs_add_write(options.eagermkdir, path, [mode](const std::string& path) {
-		int res = mkdir(path, mode);
+		int res = mkdir(path.c_str(), mode);
 		if (res == -1)
 			return -errno;
 
@@ -749,7 +749,7 @@ static int cannyfs_unlink(const char *path)
 	return cannyfs_add_write(false, path, [](const std::string& path) {
 		int res;
 
-		res = unlink(path);
+		res = unlink(path.c_str());
 		if (res == -1)
 			return -errno;
 
