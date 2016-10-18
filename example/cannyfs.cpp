@@ -457,14 +457,17 @@ int cannyfs_add_write_inner(bool defer, const std::string& path, auto fun)
 	// TODO: NOT ALL EVENTS ARE RETIRED
 	//fprintf(stderr, "In flight %lld\n", eventIdNow - retiredCount);
 
-	while (eventIdNow - retiredCount > 400)
-	{
-		usleep(100);
-	}
+	auto sleepUntilRetired = [eventIdNow] () {
+		while (eventIdNow - retiredCount > 4000)
+		{
+			usleep(100);
+		}
+	};
 
 	if (!defer)
 	{
 		lock.unlock();
+		sleepUntilRetired();
 		return worker();
 	}
 	else
@@ -475,7 +478,9 @@ int cannyfs_add_write_inner(bool defer, const std::string& path, auto fun)
 			// Hey, WE will make it running now.
 			fileobj->running = true;
 			lock.unlock();
-			workQueue.enqueue([fileobj] { fileobj->run(); });
+			sleepUntilRetired();
+			//workQueue.enqueue([fileobj] { fileobj->run(); });
+			thread([fileobj] { fileobj->run(); }).detach();
 		}
 
 		return 0;
