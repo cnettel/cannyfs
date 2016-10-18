@@ -348,6 +348,16 @@ public:
 	}
 };
 
+// Snippet from http://stackoverflow.com/questions/16190078/how-to-atomically-update-a-maximum-value
+template<typename T>
+void update_maximum(std::atomic<T>& maximum_value, T const& value) noexcept
+{
+	T prev_value = maximum_value;
+	while (prev_value < value &&
+		!maximum_value.compare_exchange_weak(prev_value, value))
+		;
+}
+
 struct cannyfs_writer
 {
 private:
@@ -373,8 +383,8 @@ public:
 
 	~cannyfs_writer()
 	{
-		if (!lock.owns_lock()) lock.lock();
-		fileobj->firstEventId = eventId;
+		unique_lock<mutex> endlock(fileobj->datalock);
+		update_maximum(fileobj->firstEventId, eventId);
 		fileobj->processed.notify_all();
 		if (generalwriter) delete generalwriter;
 	}
@@ -392,13 +402,20 @@ public:
 	}
 };
 
-void cannyfs_filedata::run()
+
+// Ensure that the parent directory exists, no-op unless eagermkdir is on
+template<class T> void ensure_parent(T path)
 {
 	if (options.eagermkdir)
 	{
 		// If we create dirs willy-nilly, we need to wait before we do stuff to entries within those dirs
-		cannyfs_reader parentdir(path.parent_path(), JUST_BARRIER);
+		cannyfs_reader parentdir(((const bf::path&&) path).parent_path(), JUST_BARRIER);
 	}
+}
+
+void cannyfs_filedata::run()
+{
+	ensure_parent(path);
 	unique_lock<mutex> locallock(this->datalock);
 	running = true;
 	while (!ops.empty())
@@ -770,6 +787,8 @@ static int cannyfs_rmdir(const char *path)
 
 static int cannyfs_symlink(const char *from, const char *to)
 {
+	ensure_parent(from);
+	ensure_parent(to);
 	// TODO: Barrier here?
 	int res;
 
