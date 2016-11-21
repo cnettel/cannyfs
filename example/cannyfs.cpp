@@ -1,4 +1,4 @@
-/*
+	/*
   cannyfs, getting high file system performance by a "can do" attitude.
   Intended for batch-based processing where "rm -rf" on all outputs
   and rerun is a real option.
@@ -70,11 +70,6 @@
 #include <functional>
 #include <queue>
 
-#define TBB_PREVIEW_GLOBAL_CONTROL 1
-#include <tbb/global_control.h>
-
-#include <tbb/task_scheduler_init.h>
-#include <tbb/task_arena.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/concurrent_queue.h>
 
@@ -216,6 +211,8 @@ uint64_t getfh(const fuse_file_info* fi)
 struct cannyfs_options
 {
 	bool eagerflush = true;
+	bool eagersymlink = true;
+	bool eagerrename = true;
 	bool eagerlink = true;
 	bool eagerchmod = true;
 	bool veryeageraccess = true;
@@ -514,6 +511,7 @@ int cannyfs_add_write(bool defer, const std::string& path1, const std::string& p
 
 		// TODO: LOCKING MODEL MESSED UP
 		cannyfs_reader reader(path1, JUST_BARRIER);
+		ensure_parent(path2);
 		cannyfs_writer writer2(path2, LOCK_WHOLE, eventId);
 
 		return fun(path1, path2);
@@ -792,16 +790,16 @@ static int cannyfs_rmdir(const char *path)
 
 static int cannyfs_symlink(const char *from, const char *to)
 {
-	ensure_parent(from);
-	ensure_parent(to);
-	// TODO: Barrier here?
-	int res;
+	// TODO: Add created directory entry.
+	return cannyfs_add_write(options.eagersymlink, from, to, [](const std::string& from, const std::string& to) {
+		int res;
 
-	res = symlink(from, to);
-	if (res == -1)
-		return -errno;
+		res = symlink(from.c_str(), to.c_str());
+		if (res == -1)
+			return -errno;
 
-	return 0;
+		return 0;
+	});
 }
 
 static int cannyfs_rename(const char *from, const char *to
@@ -810,25 +808,27 @@ static int cannyfs_rename(const char *from, const char *to
 #endif
 )
 {
-	// TODO: I/O logic at rename, what will the names be
-	cannyfs_reader b(from, LOCK_WHOLE);
-	int res;
+	// TODO: Add created directory entry.
+	return cannyfs_add_write(options.eagerrename, from, to, [](const std::string& from, const std::string& to) {
+		int res;
 
 #if FUSE_USE_VERSION >= 30
-	/* When we have renameat2() in libc, then we can implement flags */
-	if (flags)
-		return -EINVAL;
+		/* When we have renameat2() in libc, then we can implement flags */
+		if (flags)
+			return -EINVAL;
 #endif
 
-	res = rename(from, to);
-	if (res == -1)
-		return -errno;
+		res = rename(from, to);
+		if (res == -1)
+			return -errno;
 
-	return 0;
+		return 0;
+	});	
 }
 
 static int cannyfs_link(const char *cfrom, const char *cto)
 {
+	// TODO: Add created directory entry.
 	return cannyfs_add_write(options.eagerlink, cfrom, cto, [](const std::string& from, const std::string& to) {
 		int res;
 
@@ -1251,7 +1251,6 @@ static struct fuse_operations cannyfs_oper;
 
 int main(int argc, char *argv[])
 {
-	global_control c(global_control::max_allowed_parallelism, 128);
 	umask(0);
 	cannyfs_oper.flag_nopath = 0;
 	cannyfs_oper.flag_reserved = 0;
@@ -1302,7 +1301,6 @@ int main(int argc, char *argv[])
 	cannyfs_oper.lock = cannyfs_lock;
 #endif
 	cannyfs_oper.flock = cannyfs_flock;
-	workQueue.initialize();
 
 	int toret = fuse_main(argc, argv, &cannyfs_oper, NULL);
 	return toret;
