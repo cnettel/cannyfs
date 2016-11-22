@@ -376,6 +376,7 @@ public:
 
 		if (flag != LOCK_WHOLE)
 		{
+			if (options.verbose) fprintf(stderr, "Leaving write lock early for %s\n", path.c_str());
 			lock.unlock();
 		}
 
@@ -388,6 +389,7 @@ public:
 		update_maximum(fileobj->firstEventId, eventId);
 		fileobj->processed.notify_all();
 		if (generalwriter) delete generalwriter;
+		if (options.verbose) fprintf(stderr, "Leaving write lock for %s\n", fileobj->path.c_str());
 	}
 };
 
