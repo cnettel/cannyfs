@@ -449,7 +449,7 @@ int cannyfs_add_write_inner(bool defer, const std::string& path, auto fun)
 	auto worker = [defer, eventIdNow, fun]() {
 		if (options.verbose) fprintf(stderr, "Doing event ID %lld\n", eventIdNow);
 		int retval = fun(defer, eventIdNow);
-		if (options.verbose) fprintf(stderr, "Did event ID %lld with result %d (total retired: %lld)\n", eventIdNow, retval, retiredCount);
+		if (options.verbose) fprintf(stderr, "Did event ID %lld with result %d (total retired: %lld)\n", eventIdNow, retval, (long long) retiredCount);
 		retiredCount++;
 		return retval;
 	};
