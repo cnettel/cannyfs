@@ -230,8 +230,8 @@ struct cannyfs_options
 	bool eagerfsync = true;
 	bool eagercreate = true;
 	bool ignorefsync = true;
-	bool verbose = false;
 	bool eagerxattr = true;
+	bool verbose = true;
 	bool inaccuratestat = true;
 	bool cachemissing = true;
 	bool assumecreateddirempty = true;
@@ -455,7 +455,7 @@ int cannyfs_add_write_inner(bool defer, const std::string& path, auto fun)
 	// TODO: NOT ALL EVENTS ARE RETIRED
 	//fprintf(stderr, "In flight %lld\n", eventIdNow - retiredCount);
 
-	auto sleepUntilRetired = [eventIdNow] () {
+	auto sleepUntilRetired = [&eventIdNow] () {
 		while (eventIdNow - retiredCount > 4000)
 		{
 			usleep(100);
