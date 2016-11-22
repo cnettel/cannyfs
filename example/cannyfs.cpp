@@ -928,11 +928,12 @@ static int cannyfs_ftruncate(const char *path, off_t size,
 #ifdef HAVE_UTIMENSAT
 static int cannyfs_utimens(const char *cpath, const struct timespec ts[2])
 {
-	return cannyfs_add_write(options.eagerutimens, cpath, [ts](const std::string& path) {
+	struct timespec ts2[2] = { ts[0], ts[1] };
+	return cannyfs_add_write(options.eagerutimens, cpath, [ts2](const std::string& path) {
 		int res;
 
 		/* don't use utime/utimes since they follow symlinks */
-		res = utimensat(0, path.c_str(), ts, AT_SYMLINK_NOFOLLOW);
+		res = utimensat(0, path.c_str(), ts2, AT_SYMLINK_NOFOLLOW);
 		if (res == -1)
 			return -errno;
 
