@@ -1044,16 +1044,15 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 		
 		struct fuse_bufvec newsrc = FUSE_BUFVEC_INIT(sz);
 		newsrc.buf[0].fd = getcfh(fi->fh)->getpipefd(0);
-		fd_set set;
-		FD_ZERO(&set);
-		FD_SET(newsrc.buf[0].fd, &set);
 		newsrc.buf[0].flags = (fuse_buf_flags)(FUSE_BUF_FD_RETRY | FUSE_BUF_IS_FD);
+		
+		pollfd srcpoll = { newsrc.buf[0].fd, POLLIN, 0 };
 
 		int val = 0;
 
 		while (val < sz)
 		{
-			while (select(FD_SETSIZE, &set, nullptr, nullptr, nullptr) <= 0) {}
+			while (poll(&srcpoll, 1, -1) <= 0) {}
 			int ret = fuse_buf_copy(&dst, &newsrc, (fuse_buf_copy_flags)0);
 			if (ret < 0)
 			{
@@ -1081,9 +1080,10 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 	FD_SET(halfdst.buf[0].fd, &set);
 
 	int val = 0;
+	pollfd dstpoll = { halfdst.buf[0].fd, POLLOUT, 0 };
 	while (val < sz)
 	{
-		while (select(FD_SETSIZE, nullptr, &set, nullptr, nullptr) <= 0) {}
+		while (poll(&dstpoll, 1, -1) <= 0) {}
 		int ret = fuse_buf_copy(&halfdst, buf, (fuse_buf_copy_flags)0);
 		if (ret < 0)
 		{
