@@ -1,4 +1,4 @@
-	/*
+/*
   cannyfs, getting high file system performance by a "can do" attitude.
   Intended for batch-based processing where "rm -rf" on all outputs
   and rerun is a real option.
@@ -60,6 +60,8 @@
 #include <sys/file.h> /* flock(2) */
 
 #include <atomic>
+#include <iostream>
+#include <sstream>
 #include <thread>
 #include <mutex>
 #include <shared_mutex>
@@ -70,10 +72,12 @@
 #include <functional>
 #include <queue>
 
+
+// TODO: Remove TBB dependency?
 #include <tbb/concurrent_vector.h>
-#include <tbb/concurrent_queue.h>
 
 #include <boost/lockfree/stack.hpp>
+#include <boost/lockfree/queue.hpp>
 #include <boost/filesystem.hpp>
 
 using namespace tbb;
@@ -101,10 +105,9 @@ struct cannyfs_filedata
 
 	queue<function<int(void)> > ops;
 
-	struct stat ourstats = {};
+	struct stat stats = {};
 	atomic_bool created{ false };
 	atomic_bool missing{ false };
-	atomic_bool knowndir{ false };
 
 	cannyfs_filedata(const string& name) : path(name)
 	{
@@ -186,6 +189,7 @@ struct cannyfs_filehandle
 typedef concurrent_vector<cannyfs_filehandle> fhstype;
 fhstype fhs;
 boost::lockfree::stack<fhstype::iterator> freefhs(16);
+concurrent_vector<string> errors;
 
 fhstype::iterator getnewfh()
 {
@@ -427,9 +431,6 @@ void cannyfs_filedata::run()
 	running = false;
 }
 
-task_scheduler_init init(16);
-task_arena workQueue(16);
-
 int cannyfs_add_write_inner(bool defer, const std::string& path, auto fun)
 {
 	long long eventIdNow;
@@ -443,9 +444,9 @@ int cannyfs_add_write_inner(bool defer, const std::string& path, auto fun)
 
 	fileobj->lastEventId = eventIdNow;
 
-	auto worker = [eventIdNow, fun]() {
+	auto worker = [defer, eventIdNow, fun]() {
 		if (options.verbose) fprintf(stderr, "Doing event ID %lld\n", eventIdNow);
-		int retval = fun(eventIdNow);
+		int retval = fun(defer, eventIdNow);
 		if (options.verbose) fprintf(stderr, "Did event ID %lld with result %d\n", eventIdNow, retval);
 		retiredCount++;
 		return retval;
@@ -484,29 +485,42 @@ int cannyfs_add_write_inner(bool defer, const std::string& path, auto fun)
 	}
 }
 
-int cannyfs_add_write(bool defer, const std::string& path, auto fun)
+int guarderror(bool defer, const char* funcname, const std::string& path, int res)
 {
-	if (options.verbose) fprintf(stderr, "Adding write (A) for %s\n", path.c_str());
-	return cannyfs_add_write_inner(defer, path, [path, fun](int eventId)->int {
+	if (defer && res < 0)
+	{
+		stringstream error;
+		error << "ERROR: " << funcname << " for " << path;
+		cerr << error.str() << "\n";
+		errors.push_back(error.str());
+	}
+
+	return res;
+}
+
+int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& path, auto fun)
+{
+	if (options.verbose) fprintf(stderr, "Adding write %s (A) for %s\n", funcname, path.c_str());
+	return cannyfs_add_write_inner(defer, path, [path, fun, funcname](bool deferred, int eventId)->int {
 		cannyfs_writer writer(path, LOCK_WHOLE, eventId);
-		return fun(path);
+		return guarderror(deferred, funcname, path, fun(path));
 	});
 }
 
-int cannyfs_add_write(bool defer, const std::string& path, fuse_file_info* origfi, auto fun)
+int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& path, fuse_file_info* origfi, auto fun)
 {
-	if (options.verbose) fprintf(stderr, "Adding write (B) for %s\n", path.c_str());
+	if (options.verbose) fprintf(stderr, "Adding write %s (B) for %s\n", funcname, path.c_str());
 	fuse_file_info fi = *origfi;
-	return cannyfs_add_write_inner(defer, path, [path, fun, fi](int eventId)->int {
+	return cannyfs_add_write_inner(defer, path, [path, fun, fi, funcname](bool deferred, int eventId)->int {
 		cannyfs_writer writer(path, LOCK_WHOLE, eventId);
-		return fun(path, &fi);
+		return guarderror(deferred, funcname, path, fun(path, &fi));
 	});
 }
 
-int cannyfs_add_write(bool defer, const std::string& path1, const std::string& path2, auto fun)
+int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& path1, const std::string& path2, auto fun)
 {
-	if (options.verbose) fprintf(stderr, "Adding write (C) for %s\n", path1.c_str());
-	return cannyfs_add_write_inner(defer, path2, [path1, path2, fun](int eventId)->int {
+	if (options.verbose) fprintf(stderr, "Adding write %s (C) for %s\n", funcname, path1.c_str());
+	return cannyfs_add_write_inner(defer, path2, [path1, path2, fun, funcname](bool deferred, int eventId)->int {
 		//cannyfs_writer writer1(path1, LOCK_WHOLE, eventId);
 
 		// TODO: LOCKING MODEL MESSED UP
@@ -514,10 +528,12 @@ int cannyfs_add_write(bool defer, const std::string& path1, const std::string& p
 		ensure_parent(path2);
 		cannyfs_writer writer2(path2, LOCK_WHOLE, eventId);
 
-		return fun(path1, path2);
+		return guarderror(deferred, funcname, path1, fun(path1, path2));
 	});
 }
 
+// Prepend the function name, for error reporting
+#define cannyfs_add_write(...) cannyfs_func_add_write(__func__, __VA_ARGS__)
 
 static int cannyfs_getattr(const char *path, struct stat *stbuf)
 {
@@ -536,8 +552,7 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 
 		if (wascreated)
 		{
-			*stbuf = {};
-			stbuf->st_mode = S_IRUSR | S_IWUSR | ((b.fileobj->knowndir) ? S_IFDIR : S_IFREG);
+			*stbuf = b.fileobj->stats;			
 
 			return 0;
 		}
@@ -748,7 +763,7 @@ static int cannyfs_mkdir(const char *path, mode_t mode)
 		cannyfs_reader b(path, LOCK_WHOLE);
 		b.fileobj->missing = false; 
 		b.fileobj->created = true;
-		b.fileobj->knowndir = true;
+		b.fileobj->stats.st_mode = S_IRUSR | S_IWUSR | S_IFDIR;
 	}
 
 	return cannyfs_add_write(options.eagermkdir, path, [mode](const std::string& path) {
@@ -790,7 +805,12 @@ static int cannyfs_rmdir(const char *path)
 
 static int cannyfs_symlink(const char *from, const char *to)
 {
-	// TODO: Add created directory entry.
+	{
+		cannyfs_reader b(to, NO_BARRIER | LOCK_WHOLE);
+		b.fileobj->missing = false;
+		b.fileobj->created = true;
+		b.fileobj->stats.st_mode = S_IRUSR | S_IWUSR | S_IFLNK;
+	}
 	return cannyfs_add_write(options.eagersymlink, from, to, [](const std::string& from, const std::string& to) {
 		int res;
 
@@ -808,7 +828,15 @@ static int cannyfs_rename(const char *from, const char *to
 #endif
 )
 {
-	// TODO: Add created directory entry.
+	{
+		cannyfs_reader b1(from, NO_BARRIER | LOCK_WHOLE);
+		cannyfs_reader b2(to, NO_BARRIER | LOCK_WHOLE);
+		b1.fileobj->missing = true;
+		b2.fileobj->missing = false;
+		b2.fileobj->created = true;
+		// TODO: Forward stats to old file. Now we guess them.
+		b2.fileobj->stats.st_mode = S_IRUSR | S_IWUSR | S_IFREG;
+	}
 	return cannyfs_add_write(options.eagerrename, from, to, [](const std::string& from, const std::string& to) {
 		int res;
 
@@ -818,7 +846,7 @@ static int cannyfs_rename(const char *from, const char *to
 			return -EINVAL;
 #endif
 
-		res = rename(from, to);
+		res = rename(from.c_str(), to.c_str());
 		if (res == -1)
 			return -errno;
 
@@ -916,6 +944,7 @@ static int cannyfs_create(const char *cpath, mode_t mode, struct fuse_file_info 
 	fi->fh = getnewfh() - fhs.begin();
 	{
 		cannyfs_reader b(cpath, NO_BARRIER | LOCK_WHOLE);
+		b.fileobj->stats.st_mode = S_IRUSR | S_IWUSR | S_IFREG;
 		b.fileobj->created = true;
 		b.fileobj->missing = false;
 	}
@@ -1303,5 +1332,14 @@ int main(int argc, char *argv[])
 	cannyfs_oper.flock = cannyfs_flock;
 
 	int toret = fuse_main(argc, argv, &cannyfs_oper, NULL);
+	// TODO: Flush everything BEFORE reporting errors.
+	if (errors.size())
+	{
+		cerr << "[cannyfs] ERRORS NOT REPORTED TO CALLER:\n";
+		for (auto error : errors)
+		{
+			cerr << error << "\n";
+		}
+	}
 	return toret;
 }
