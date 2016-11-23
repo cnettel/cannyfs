@@ -191,9 +191,8 @@ struct cannyfs_filehandle
 			pipe(pipefds);
 			if (options.maxpipesize)
 			{
-				fcntl(pipefds[1], F_SETPIPE_SZ, options.maxpipesize);
+				fcntl(pipefds[0], F_SETPIPE_SZ, options.maxpipesize);
 			}
-			//fcntl(pipefds[0], F_SETPIPE_SZ, 131072);
 		}
 
 		return pipefds[dir];
