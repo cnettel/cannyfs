@@ -86,6 +86,33 @@ namespace bf = boost::filesystem;
 
 using namespace std;
 
+struct cannyfs_options
+{
+	bool eagerflush = true;
+	bool eagersymlink = true;
+	bool eagerrename = true;
+	bool eagerlink = true;
+	bool eagerchmod = true;
+	bool veryeageraccess = true;
+	bool eagermkdir = true;
+	bool eageraccess = true;
+	bool eagerutimens = true;
+	bool eagerchown = true;
+	bool eagerclose = true;
+	bool closeverylate = false;
+	bool restrictivedirs = false;
+	bool eagerfsync = true;
+	bool eagercreate = true;
+	bool ignorefsync = true;
+	bool eagerxattr = true;
+	bool verbose = true;
+	bool inaccuratestat = true;
+	bool cachemissing = true;
+	bool assumecreateddirempty = true;
+	int maxpipesize = 1048576;
+	int numThreads = 16;
+} options;
+
 atomic_llong eventId(0);
 atomic_llong retiredCount(0);
 
@@ -164,7 +191,7 @@ struct cannyfs_filehandle
 			pipe(pipefds);
 			if (options.maxpipesize)
 			{
-				fcntl(pipe_des[1], F_SETPIPE_SZ, options.maxpipesize);
+				fcntl(pipefds[1], F_SETPIPE_SZ, options.maxpipesize);
 			}
 			//fcntl(pipefds[0], F_SETPIPE_SZ, 131072);
 		}
@@ -215,35 +242,6 @@ uint64_t getfh(const fuse_file_info* fi)
 {
 	return getcfh(fi->fh)->getfh();
 }
-
-
-struct cannyfs_options
-{
-	bool eagerflush = true;
-	bool eagersymlink = true;
-	bool eagerrename = true;
-	bool eagerlink = true;
-	bool eagerchmod = true;
-	bool veryeageraccess = true;
-	bool eagermkdir = true;
-	bool eageraccess = true;
-	bool eagerutimens = true;
-	bool eagerchown = true;
-	bool eagerclose = true;
-	bool closeverylate = false;
-	bool restrictivedirs = false;
-	bool eagerfsync = true;
-	bool eagercreate = true;
-	bool ignorefsync = true;
-	bool eagerxattr = true;
-	bool verbose = true;
-	bool inaccuratestat = true;
-	bool cachemissing = true;
-	bool assumecreateddirempty = true;
-	int maxpipesize = 1048576;
-	int numThreads = 16;
-} options;
-
 
 const int NO_BARRIER = 1;
 const int JUST_BARRIER = 0;
@@ -1040,6 +1038,9 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 	cannyfs_filehandle* cfh = getcfh(fi->fh);
 
 	int sz = fuse_buf_size(buf);
+	// TODO:
+	// What should/could be done here is to first try a non-blocking pipe write. If that doesn't succeed, swallow the pill
+	// and get a user space buffer. Or linked list of pipes?
 
 	int toret = cannyfs_add_write(true, cpath, fi, [sz, offset](const std::string& path, const fuse_file_info *fi) {
 
