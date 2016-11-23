@@ -540,7 +540,7 @@ int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& 
 
 static int cannyfs_getattr(const char *path, struct stat *stbuf)
 {
-	bool inaccurate = options.inaccuratestat;
+	const bool inaccurate = options.inaccuratestat;
 	cannyfs_reader b(path, inaccurate ? (NO_BARRIER | LOCK_WHOLE) : JUST_BARRIER);
 
 	if (inaccurate)
