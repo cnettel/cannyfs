@@ -528,7 +528,7 @@ int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& 
 
 		// TODO: LOCKING MODEL MESSED UP
 		cannyfs_reader reader(path1, JUST_BARRIER);
-		ensure_parent(path2);
+		ensure_parent(path1);
 		cannyfs_writer writer2(path2, LOCK_WHOLE, eventId);
 
 		return guarderror(deferred, funcname, path1, fun(path1, path2));
