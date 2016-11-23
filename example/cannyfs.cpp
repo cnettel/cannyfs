@@ -162,6 +162,10 @@ struct cannyfs_filehandle
 		{
 			// TODO: CHECK ERRORS.
 			pipe(pipefds);
+			if (options.maxpipesize)
+			{
+				fcntl(pipe_des[1], F_SETPIPE_SZ, options.maxpipesize);
+			}
 			//fcntl(pipefds[0], F_SETPIPE_SZ, 131072);
 		}
 
@@ -236,6 +240,7 @@ struct cannyfs_options
 	bool inaccuratestat = true;
 	bool cachemissing = true;
 	bool assumecreateddirempty = true;
+	int maxpipesize = 1048576;
 	int numThreads = 16;
 } options;
 
