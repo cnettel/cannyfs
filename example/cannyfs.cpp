@@ -1077,10 +1077,6 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 	halfdst.buf[0].flags = (fuse_buf_flags) (FUSE_BUF_IS_FD | FUSE_BUF_FD_RETRY);
 	halfdst.buf[0].fd = getcfh(fi->fh)->getpipefd(1);
 
-	fd_set set;
-	FD_ZERO(&set);
-	FD_SET(halfdst.buf[0].fd, &set);
-
 	int val = 0;
 	pollfd dstpoll = { halfdst.buf[0].fd, POLLOUT, 0 };
 	while (val < sz)
