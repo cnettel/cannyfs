@@ -30,6 +30,8 @@
 
 #define FUSE_USE_VERSION 26
 
+#define _GNU_SOURCE
+
 #ifdef HAVE_CONFIG_H
 #include <config.h>
 #endif
@@ -37,7 +39,6 @@
 #define HAVE_UTIMENSAT
 //#define HAVE_SETXATTR
 
-#define _GNU_SOURCE
 
 #include <fuse.h>
 
@@ -109,7 +110,6 @@ struct cannyfs_options
 	bool inaccuratestat = true;
 	bool cachemissing = true;
 	bool assumecreateddirempty = true;
-	int maxpipesize = 1048576;
 	int numThreads = 16;
 } options;
 
@@ -189,10 +189,6 @@ struct cannyfs_filehandle
 		{
 			// TODO: CHECK ERRORS.
 			pipe(pipefds);
-			if (options.maxpipesize)
-			{
-				fcntl(pipefds[0], F_SETPIPE_SZ, options.maxpipesize);
-			}
 		}
 
 		return pipefds[dir];
@@ -212,7 +208,7 @@ struct cannyfs_filehandle
 		{
 			opened.wait(locallock);
 		}
-		
+
 		return fd;
 	}
 };
@@ -374,7 +370,7 @@ public:
 	cannyfs_writer(const std::string& path, int flag, long long eventId) : eventId(eventId), global(path != "")
 	{
 		if (options.verbose) fprintf(stderr, "Entering write lock for %s\n", path.c_str());
-		generalwriter = nullptr;	
+		generalwriter = nullptr;
 		fileobj = filemap.get(path, true, lock);
 
 		if (flag != LOCK_WHOLE)
@@ -557,7 +553,7 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 
 		if (wascreated)
 		{
-			*stbuf = b.fileobj->stats;			
+			*stbuf = b.fileobj->stats;
 
 			return 0;
 		}
@@ -763,10 +759,10 @@ static int cannyfs_mknod(const char *path, mode_t mode, dev_t rdev)
 }
 
 static int cannyfs_mkdir(const char *path, mode_t mode)
-{	
+{
 	{
 		cannyfs_reader b(path, LOCK_WHOLE);
-		b.fileobj->missing = false; 
+		b.fileobj->missing = false;
 		b.fileobj->created = true;
 		b.fileobj->stats.st_mode = S_IRUSR | S_IWUSR | S_IFDIR;
 	}
@@ -856,7 +852,7 @@ static int cannyfs_rename(const char *from, const char *to
 			return -errno;
 
 		return 0;
-	});	
+	});
 }
 
 static int cannyfs_link(const char *cfrom, const char *cto)
@@ -1048,11 +1044,11 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 		dst.buf[0].flags = (fuse_buf_flags) (FUSE_BUF_IS_FD | FUSE_BUF_FD_SEEK);
 		dst.buf[0].fd = getfh(fi);
 		dst.buf[0].pos = offset;
-		
+
 		struct fuse_bufvec newsrc = FUSE_BUFVEC_INIT(sz);
 		newsrc.buf[0].fd = getcfh(fi->fh)->getpipefd(0);
 		newsrc.buf[0].flags = (fuse_buf_flags)(FUSE_BUF_FD_RETRY | FUSE_BUF_IS_FD);
-		
+
 		pollfd srcpoll = { newsrc.buf[0].fd, POLLIN, 0 };
 
 		int val = 0;
