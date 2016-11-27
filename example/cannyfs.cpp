@@ -106,7 +106,7 @@ struct cannyfs_options
 	bool eagercreate = true;
 	bool ignorefsync = true;
 	bool eagerxattr = true;
-	bool verbose = true;
+	bool verbose = false;
 	bool inaccuratestat = true;
 	bool cachemissing = true;
 	bool assumecreateddirempty = true;
