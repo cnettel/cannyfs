@@ -161,10 +161,9 @@ struct cannyfs_filehandle
 {
 	mutex lock;
 	int64_t fd;
-	int pipefds[2];
 	condition_variable opened;
 
-	cannyfs_filehandle() : fd(-1), pipefds{-1, -1}
+	cannyfs_filehandle() : fd(-1)
 	{
 	}
 
@@ -175,23 +174,6 @@ struct cannyfs_filehandle
 		{
 			close(fd);
 		}*/
-		if (pipefds[0] != -1)
-		{
-			close(pipefds[0]);
-			close(pipefds[1]);
-		}
-	}
-
-	int getpipefd(int dir)
-	{
-		lock_guard<mutex> locallock(lock);
-		if (pipefds[0] == -1)
-		{
-			// TODO: CHECK ERRORS.
-			pipe(pipefds);
-		}
-
-		return pipefds[dir];
 	}
 
 	void setfh(uint64_t fd)
@@ -217,6 +199,46 @@ typedef concurrent_vector<cannyfs_filehandle> fhstype;
 fhstype fhs;
 boost::lockfree::stack<fhstype::iterator> freefhs(16);
 concurrent_vector<string> errors;
+
+typedef pair<int, int> cannyfs_pipefds;
+
+namespace boost
+{
+template <class T, class U> struct has_trivial_assign<std::pair<T,U> > :
+	integral_constant<bool,
+	(has_trivial_assign<T>::value &&
+	has_trivial_assign<U>::value)> { };
+}
+
+struct cannyfs_pipes
+{
+private:
+	boost::lockfree::stack<cannyfs_pipefds> freepipes;
+public:
+	cannyfs_pipes() : freepipes(100)
+	{}
+
+	cannyfs_pipefds getpipe()
+	{
+		cannyfs_pipefds pipe;
+		if (!freepipes.pop(pipe))
+		{
+			::pipe(&pipe.first);
+		}
+
+		return pipe;
+	}
+
+	void returnpipe(cannyfs_pipefds pipe)
+	{
+		// TODO: Make fixed size, push will never return false now
+		if (!freepipes.push(pipe))
+		{
+			close(pipe.first);
+			close(pipe.second);
+		}
+	}
+} piper;
 
 fhstype::iterator getnewfh()
 {
@@ -1036,8 +1058,9 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 	// TODO:
 	// What should/could be done here is to first try a non-blocking pipe write. If that doesn't succeed, swallow the pill
 	// and get a user space buffer. Or linked list of pipes?
+	cannyfs_pipefds pipe = piper.getpipe();
 
-	int toret = cannyfs_add_write(true, cpath, fi, [sz, offset](const std::string& path, const fuse_file_info *fi) {
+	int toret = cannyfs_add_write(true, cpath, fi, [sz, offset, pipe](const std::string& path, const fuse_file_info *fi) {
 
 		struct fuse_bufvec dst = FUSE_BUFVEC_INIT(sz);
 
@@ -1046,7 +1069,7 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 		dst.buf[0].pos = offset;
 
 		struct fuse_bufvec newsrc = FUSE_BUFVEC_INIT(sz);
-		newsrc.buf[0].fd = getcfh(fi->fh)->getpipefd(0);
+		newsrc.buf[0].fd = pipe.first;
 		newsrc.buf[0].flags = (fuse_buf_flags)(FUSE_BUF_FD_RETRY | FUSE_BUF_IS_FD);
 
 		pollfd srcpoll = { newsrc.buf[0].fd, POLLIN, 0 };
@@ -1059,12 +1082,14 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 			int ret = fuse_buf_copy(&dst, &newsrc, (fuse_buf_copy_flags)0);
 			if (ret < 0)
 			{
+				close(pipe.first);
 				return ret;
 			}
 
 			val += ret;
 		}
 
+		piper.returnpipe(pipe);
 		return val;
 	});
 
@@ -1076,7 +1101,7 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 	struct fuse_bufvec halfdst = FUSE_BUFVEC_INIT(sz);
 
 	halfdst.buf[0].flags = (fuse_buf_flags) (FUSE_BUF_IS_FD | FUSE_BUF_FD_RETRY);
-	halfdst.buf[0].fd = getcfh(fi->fh)->getpipefd(1);
+	halfdst.buf[0].fd = pipe.second;
 
 	int val = 0;
 	pollfd dstpoll = { halfdst.buf[0].fd, POLLOUT, 0 };
@@ -1086,6 +1111,7 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 		int ret = fuse_buf_copy(&halfdst, buf, (fuse_buf_copy_flags)0);
 		if (ret < 0)
 		{
+			close(pipe.second);
 			return ret;
 		}
 
