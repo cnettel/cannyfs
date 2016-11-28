@@ -92,6 +92,9 @@ struct cannyfs_options
 	bool eagerflush = true;
 	bool eagersymlink = true;
 	bool eagerrename = true;
+	bool eagerunlink = true;
+	bool eagerrmdir = true;
+	bool restrictiveunlink = true;
 	bool eagerlink = true;
 	bool eagerchmod = true;
 	bool veryeageraccess = true;
@@ -349,7 +352,7 @@ struct cannyfs_reader
 public:
 	unique_lock<mutex> lock;
 	cannyfs_filedata* fileobj;
-	cannyfs_reader(const bf::path&& path, int flag)
+	cannyfs_reader(const bf::path& path, int flag)
 	{
 		if (options.verbose) fprintf(stderr, "Waiting for reading %s\n", path.c_str());
 
@@ -385,14 +388,12 @@ struct cannyfs_writer
 private:
 	unique_lock<mutex> lock;
 	cannyfs_filedata* fileobj;
-	cannyfs_writer* generalwriter;
 	long long eventId;
 	bool global;
 public:
-	cannyfs_writer(const std::string& path, int flag, long long eventId) : eventId(eventId), global(path != "")
+	cannyfs_writer(const bf::path& path, int flag, long long eventId, bool dir = false) : eventId(eventId), global(path == "")
 	{
-		if (options.verbose) fprintf(stderr, "Entering write lock for %s\n", path.c_str());
-		generalwriter = nullptr;
+		if (options.verbose) fprintf(stderr, "Entering write lock for %s\n", path.c_str());	
 		fileobj = filemap.get(path, true, lock);
 
 		if (flag != LOCK_WHOLE)
@@ -401,7 +402,17 @@ public:
 			lock.unlock();
 		}
 
-		if (!global && options.restrictivedirs) generalwriter = new cannyfs_writer("", JUST_BARRIER, eventId);
+		if (!global && options.restrictivedirs)
+		{
+			if (dir)
+			{
+				// We are a dir
+				cannyfs_reader(path, JUST_BARRIER);
+			}
+			unique_lock<mutex> globallock;
+			cannyfs_filedata* globalfileobj = filemap.get(path, true, globallock, true);
+			update_maximum(globalfileobj->lastEventId, eventId);
+		}
 	}
 
 	~cannyfs_writer()
@@ -409,7 +420,11 @@ public:
 		unique_lock<mutex> endlock(fileobj->datalock);
 		update_maximum(fileobj->firstEventId, eventId);
 		fileobj->processed.notify_all();
-		if (generalwriter) delete generalwriter;
+
+		if (!global && options.restrictivedirs)
+		{
+			cannyfs_writer("", JUST_BARRIER, eventId);
+		}
 		if (options.verbose) fprintf(stderr, "Leaving write lock for %s\n", fileobj->path.c_str());
 	}
 };
@@ -543,13 +558,13 @@ int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& 
 int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& path1, const std::string& path2, auto fun)
 {
 	if (options.verbose) fprintf(stderr, "Adding write %s (C) for %s\n", funcname, path1.c_str());
-	return cannyfs_add_write_inner(defer, path2, [path1 = string(path1), path2 = string(path2), fun, funcname](bool deferred, int eventId)->int {
+	return cannyfs_add_write_inner(defer, path2, [path1 = string(path1), path2 = string(path2), fun, funcname, dir](bool deferred, int eventId)->int {
 		//cannyfs_writer writer1(path1, LOCK_WHOLE, eventId);
 
 		// TODO: LOCKING MODEL MESSED UP
 		cannyfs_reader reader(path1, JUST_BARRIER);
 		ensure_parent(path1);
-		cannyfs_writer writer2(path2, LOCK_WHOLE, eventId);
+		cannyfs_writer writer2(path2, LOCK_WHOLE, eventId, dir);
 
 		return guarderror(deferred, funcname, path1, fun(path1, path2));
 	});
@@ -803,8 +818,13 @@ static int cannyfs_unlink(const char *path)
 	// We should KILL all pending IOs, not let them go through to some corpse. Or, well,
 	// we should have a flag to do that.
 	// TODO: cannyfs_clear(path);
+	{
+		cannyfs_reader b(path, NO_BARRIER | LOCK_WHOLE);
+		b.fileobj->missing = true;
+		b.fileobj->created = false;
+	}
 
-	return cannyfs_add_write(false, path, [](const std::string& path) {
+	return cannyfs_add_write(options.eagerunlink, path, [](const std::string& path) {
 		int res;
 
 		res = unlink(path.c_str());
@@ -817,13 +837,22 @@ static int cannyfs_unlink(const char *path)
 
 static int cannyfs_rmdir(const char *path)
 {
-	int res;
+	{
+		cannyfs_reader b(path, NO_BARRIER | LOCK_WHOLE);
+		b.fileobj->missing = true;
+		b.fileobj->created = false;
+	}
 
-	res = rmdir(path);
-	if (res == -1)
-		return -errno;
+	// Quite dangerous unless restrictive dirs is turned on, even if eagerrmdir is false!
+	return cannyfs_add_write(options.eagerrmdir, path, [](const std::string& path) {
+		int res;
 
-	return 0;
+		res = rmdir(path);
+		if (res == -1)
+			return -errno;
+
+		return 0;
+	}, true);
 }
 
 static int cannyfs_symlink(const char *from, const char *to)
