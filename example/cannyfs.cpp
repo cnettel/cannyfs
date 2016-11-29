@@ -900,10 +900,10 @@ static int cannyfs_symlink(const char *from, const char *to)
 		b.fileobj->created = true;
 		b.fileobj->stats.st_mode = S_IRUSR | S_IWUSR | S_IFLNK;
 	}
-	return cannyfs_add_write(options.eagersymlink, from, to, [](const std::string& from, const std::string& to) {
+	return cannyfs_add_write(options.eagersymlink, (bf::path(to).parent_path() / from).string(), to, [fromreal = string(from)](const std::string& from, const std::string& to) {
 		int res;
 
-		res = symlink(from.c_str(), to.c_str());
+		res = symlink(fromreal.c_str(), to.c_str());
 		if (res == -1)
 			return -errno;
 
