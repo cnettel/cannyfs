@@ -108,6 +108,7 @@ struct cannyfs_options
 	bool assumecreateddirempty = true;
 	bool cachemissing = true;
 	bool closeverylate = false; // TODO: Expose when implemented
+	bool dieonerror = true;
 	bool ignorefsync = true;
 	bool inaccuratestat = true;
 	bool restrictivedirs = false;
@@ -267,24 +268,21 @@ uint64_t getfh(const fuse_file_info* fi)
 	return getcfh(fi->fh)->getfh();
 }
 
-const int NO_BARRIER = 1;
-const int JUST_BARRIER = 0;
-const int LOCK_WHOLE = 2;
-
-
-void cannyfs_reporterror()
+int cannyfs_guarderror(bool defer, const char* funcname, const std::string& path, int res)
 {
-	fprintf(stderr, "ERROR: %d\n", errno);
-}
-
-void cannyfs_negerrorchecker(int code)
-{
-	if (code < 0)
+	if (defer && res < 0)
 	{
-		cannyfs_reporterror();
+		stringstream error;
+		error << "ERROR: " << funcname << " for " << path;
+		cerr << error.str() << "\n";
+		if (options.dieonerror)
+		{
+			abort();
+		}
+		errors.push_back(error.str());
 	}
-	// abort();
-	// TODO: ADD OPTION
+
+	return res;
 }
 
 struct cannyfs_closer
@@ -296,9 +294,14 @@ public:
 	cannyfs_closer(int fd) : fd(fd) {}
 	~cannyfs_closer()
 	{
-		cannyfs_negerrorchecker(close(fd));
+		cannyfs_guarderror(true, "cannyfs_closer", "<path not known at this point>", close(fd));
 	}
 };
+
+const int NO_BARRIER = 1;
+const int JUST_BARRIER = 0;
+const int LOCK_WHOLE = 2;
+const int DIR_LOCK = 4;
 
 vector<cannyfs_closer> closes;
 
@@ -387,6 +390,17 @@ void update_maximum(std::atomic<T>& maximum_value, T const& value) noexcept
 		;
 }
 
+struct cannyfs_dirreader : cannyfs_reader
+{
+private:
+public:
+	cannyfs_dirreader() = delete;
+	cannyfs_dirreader(const bf::path& path, int flag) :
+		cannyfs_reader(path, flag)
+	{
+	}
+};
+
 struct cannyfs_writer
 {
 private:
@@ -411,10 +425,10 @@ public:
 			if (dir)
 			{
 				// We are a dir
-				cannyfs_reader(path, JUST_BARRIER);
+				cannyfs_dirreader(path, JUST_BARRIER);
 			}
 			unique_lock<mutex> globallock;
-			cannyfs_filedata* globalfileobj = filemap.get(path, true, globallock, true);
+			cannyfs_filedata* globalfileobj = filemap.get("", true, globallock, true);
 			update_maximum(globalfileobj->lastEventId, eventId);
 		}
 	}
@@ -432,19 +446,6 @@ public:
 		if (options.verbose) fprintf(stderr, "Leaving write lock for %s\n", fileobj->path.c_str());
 	}
 };
-
-
-struct cannyfs_dirreader : cannyfs_reader
-{
-private:
-public:
-	cannyfs_dirreader() = delete;
-	cannyfs_dirreader(std::string path, int flag) :
-		cannyfs_reader(options.restrictivedirs ? "" : path, flag)
-	{
-	}
-};
-
 
 // Ensure that the parent directory exists, no-op unless eagermkdir is on
 template<class T> void ensure_parent(T path)
@@ -527,20 +528,6 @@ int cannyfs_add_write_inner(bool defer, const std::string& path, auto fun)
 	}
 }
 
-int guarderror(bool defer, const char* funcname, const std::string& path, int res)
-{
-	if (defer && res < 0)
-	{
-		stringstream error;
-		error << "ERROR: " << funcname << " for " << path;
-		cerr << error.str() << "\n";
-		errors.push_back(error.str());
-	}
-
-	return res;
-}
-
-
 // Borrowed from N3436
 namespace detail {
 	template <typename T>
@@ -568,7 +555,7 @@ int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& 
 	if (options.verbose) fprintf(stderr, "Adding write %s (A) for %s\n", funcname, path.c_str());
 	return cannyfs_add_write_inner(defer, path, [path = string(path), fun, funcname, dir](bool deferred, int eventId)->int {
 		cannyfs_writer writer(path, LOCK_WHOLE, eventId);
-		return guarderror(deferred, funcname, path, fun(path));
+		return cannyfs_guarderror(deferred, funcname, path, fun(path));
 	});
 }
 
@@ -579,7 +566,7 @@ int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& 
 	fuse_file_info fi = *origfi;
 	return cannyfs_add_write_inner(defer, path, [path = string(path), fun, fi, funcname, dir](bool deferred, int eventId)->int {
 		cannyfs_writer writer(path, LOCK_WHOLE, eventId, dir);
-		return guarderror(deferred, funcname, path, fun(path, &fi));
+		return cannyfs_guarderror(deferred, funcname, path, fun(path, &fi));
 	});
 }
 
@@ -595,7 +582,7 @@ int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& 
 		ensure_parent(path1);
 		cannyfs_writer writer2(path2, LOCK_WHOLE, eventId, dir);
 
-		return guarderror(deferred, funcname, path1, fun(path1, path2));
+		return cannyfs_guarderror(deferred, funcname, path1, fun(path1, path2));
 	});
 }
 
@@ -1197,7 +1184,7 @@ static int cannyfs_flush(const char *cpath, struct fuse_file_info *fi)
 	{
 		// Just adding it to the close list might lock, if we don't have an fh yet
 		return cannyfs_add_write(options.eagerflush, cpath, fi, [](const std::string& path, const fuse_file_info *fi) {
-			closes.push_back(dup(getfh(fi)));
+			closes.emplace_back(dup(getfh(fi)));
 
 			// TODO: Adjust return value if dup fails?
 			return 0;
@@ -1226,7 +1213,7 @@ static int cannyfs_release(const char *cpath, struct fuse_file_info *fi)
 	{
 		// Just adding it to the close list might lock, if we don't have an fh yet
 		return cannyfs_add_write(options.eagerclose, cpath, fi, [](const std::string& path, const fuse_file_info *fi) {
-			closes.push_back(getfh(fi));
+			closes.emplace_back(getfh(fi));
 
 			return 0;
 		});
@@ -1473,6 +1460,10 @@ int main(int argc, char *argv[])
 		{
 			cerr << error << "\n";
 		}
+	}
+	else
+	{
+		cerr << "[cannyfs] NO ERRORS REPORTED\n";
 	}
 	return toret;
 }
