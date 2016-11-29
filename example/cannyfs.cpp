@@ -159,6 +159,12 @@ struct cannyfs_filedata
 			processed.wait(locallock);
 		}
 	}
+
+	void sync()
+	{
+		unique_lock<mutex> locallock(datalock);
+		spinevent(locallock);
+	}
 };
 
 struct cannyfs_filehandle
@@ -318,6 +324,19 @@ private:
 	set<cannyfs_filedata, comp> data;
 	shared_timed_mutex lock;
 public:
+	vector<cannyfs_filedata*> shallowcopy()
+	{
+		shared_lock<shared_timed_mutex> maplock(this->lock);
+		vector<cannyfs_filedata*> res;
+		res.reserve(data.size());
+		for (auto& filedata : data)
+		{
+			res.push_back(const_cast<cannyfs_filedata*>(&filedata));
+		}
+
+		return res;
+	}
+
 	cannyfs_filedata* get(const bf::path& path, bool always, unique_lock<mutex>& lock, bool lockdata = false)
 	{
 		cannyfs_filedata* result = nullptr;
@@ -364,7 +383,7 @@ public:
 		if (options.verbose) fprintf(stderr, "Waiting for reading %s\n", path.c_str());
 
 		unique_lock<mutex> locallock;
-		fileobj = filemap.get(path, flag & LOCK_WHOLE, locallock, flag & NO_BARRIER);
+		fileobj = filemap.get(path, flag & LOCK_WHOLE, locallock, !(flag & NO_BARRIER));
 
 		if (!(flag & NO_BARRIER) && fileobj)
 		{
@@ -1456,7 +1475,12 @@ int main(int argc, char *argv[])
 
 	fuse_opt_parse(&args, &options, cannyfs_opts, nullptr);
 	int toret = fuse_main(args.argc, args.argv, &cannyfs_oper, NULL);
-	// TODO: Flush everything BEFORE reporting errors.
+	cerr << "[cannyfs] Unmounted. Finishing sync.\n";
+	// Flush everything BEFORE reporting errors.
+	for (auto filedata : filemap.shallowcopy())
+	{
+		filedata->sync();
+	}
 	if (errors.size())
 	{
 		cerr << "[cannyfs] ERRORS NOT REPORTED TO CALLER:\n";
