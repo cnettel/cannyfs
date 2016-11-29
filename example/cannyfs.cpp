@@ -383,7 +383,7 @@ public:
 		if (options.verbose) fprintf(stderr, "Waiting for reading %s\n", path.c_str());
 
 		unique_lock<mutex> locallock;
-		fileobj = filemap.get(path, flag & LOCK_WHOLE, locallock, !(flag & NO_BARRIER));
+		fileobj = filemap.get(path, flag & LOCK_WHOLE, locallock, true);
 
 		if (!(flag & NO_BARRIER) && fileobj)
 		{
