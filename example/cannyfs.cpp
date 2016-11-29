@@ -89,30 +89,30 @@ using namespace std;
 
 struct cannyfs_options
 {
-	bool eagerflush = true;
-	bool eagersymlink = true;
-	bool eagerrename = true;
-	bool eagerunlink = true;
-	bool eagerrmdir = true;
-	bool restrictiveunlink = true;
-	bool eagerlink = true;
-	bool eagerchmod = true;
-	bool veryeageraccess = true;
-	bool eagermkdir = true;
 	bool eageraccess = true;
-	bool eagerutimens = true;
+	bool eagerchmod = true;
 	bool eagerchown = true;
 	bool eagerclose = true;
-	bool closeverylate = false;
-	bool restrictivedirs = false;
-	bool eagerfsync = true;
 	bool eagercreate = true;
-	bool ignorefsync = true;
+	bool eagerflush = true;
+	bool eagerfsync = true;
+	bool eagerlink = true;	
+	bool eagermkdir = true;
+	bool eagerrename = true;
+	bool eagerrmdir = true;
+	bool eagersymlink = true;
+	bool eagerunlink = true;
+	bool eagerutimens = true;
 	bool eagerxattr = true;
 	bool verbose = false;
-	bool inaccuratestat = true;
-	bool cachemissing = true;
 	bool assumecreateddirempty = true;
+	bool cachemissing = true;
+	bool closeverylate = false; // TODO: Expose when implemented
+	bool ignorefsync = true;
+	bool inaccuratestat = true;
+	bool restrictivedirs = false;
+	bool veryeageraccess = true;
+	int maxpipesize = 1048576;
 	int numThreads = 16;
 } options;
 
@@ -536,26 +536,51 @@ int guarderror(bool defer, const char* funcname, const std::string& path, int re
 	return res;
 }
 
-int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& path, auto fun)
+
+// Borrowed from N3436
+namespace detail {
+	template <typename T>
+	using always_void = void;
+
+	template <typename Expr, typename Enable = void>
+	struct is_callable_impl
+		: std::false_type
+	{};
+
+	template <typename F, typename ...Args>
+	struct is_callable_impl<F(Args...), always_void<std::result_of_t<F(Args...)>>>
+		: std::true_type
+	{};
+}
+
+template <typename Expr>
+struct is_callable
+	: detail::is_callable_impl<Expr>
+{};
+
+template<class T, typename result_of<T(std::string)>::type = 0>
+int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& path, T fun, bool dir = false)
 {
 	if (options.verbose) fprintf(stderr, "Adding write %s (A) for %s\n", funcname, path.c_str());
-	return cannyfs_add_write_inner(defer, path, [path = string(path), fun, funcname](bool deferred, int eventId)->int {
+	return cannyfs_add_write_inner(defer, path, [path = string(path), fun, funcname, dir](bool deferred, int eventId)->int {
 		cannyfs_writer writer(path, LOCK_WHOLE, eventId);
 		return guarderror(deferred, funcname, path, fun(path));
 	});
 }
 
-int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& path, fuse_file_info* origfi, auto fun)
+template<class T, typename result_of<T(std::string, fuse_file_info*)>::type = 0>
+int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& path, fuse_file_info* origfi, T fun, bool dir = false)
 {
 	if (options.verbose) fprintf(stderr, "Adding write %s (B) for %s\n", funcname, path.c_str());
 	fuse_file_info fi = *origfi;
-	return cannyfs_add_write_inner(defer, path, [path = string(path), fun, fi, funcname](bool deferred, int eventId)->int {
-		cannyfs_writer writer(path, LOCK_WHOLE, eventId);
+	return cannyfs_add_write_inner(defer, path, [path = string(path), fun, fi, funcname, dir](bool deferred, int eventId)->int {
+		cannyfs_writer writer(path, LOCK_WHOLE, eventId, dir);
 		return guarderror(deferred, funcname, path, fun(path, &fi));
 	});
 }
 
-int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& path1, const std::string& path2, auto fun)
+template<class T, typename result_of<T(std::string, std::string)>::type = 0>
+int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& path1, const std::string& path2, T fun, bool dir = false)
 {
 	if (options.verbose) fprintf(stderr, "Adding write %s (C) for %s\n", funcname, path1.c_str());
 	return cannyfs_add_write_inner(defer, path2, [path1 = string(path1), path2 = string(path2), fun, funcname, dir](bool deferred, int eventId)->int {
@@ -847,7 +872,7 @@ static int cannyfs_rmdir(const char *path)
 	return cannyfs_add_write(options.eagerrmdir, path, [](const std::string& path) {
 		int res;
 
-		res = rmdir(path);
+		res = rmdir(path.c_str());
 		if (res == -1)
 			return -errno;
 
@@ -1331,9 +1356,54 @@ static int cannyfs_flock(const char *path, struct fuse_file_info *fi, int op)
 }
 
 static struct fuse_operations cannyfs_oper;
+#define FS_OPT(t, p, v) { t, offsetof(struct cannyfs_options, p), v }
+
+static struct fuse_opt cannyfs_opts[] = {
+	FS_OPT("--assumecreateddirempty", assumecreateddirempty, true),
+	FS_OPT("--cachemissing", cachemissing, true),
+	FS_OPT("--ignorefsync", ignorefsync, true),
+	FS_OPT("--inaccuratestat", inaccuratestat, true),
+	FS_OPT("--restrictivedirs", restrictivedirs, true),
+	FS_OPT("--veryeageraccess", veryeageraccess, true),
+	FS_OPT("--eageraccess", eageraccess, true),
+	FS_OPT("--eagerchmod", eagerchmod, true),
+	FS_OPT("--eagerchown", eagerchown, true),
+	FS_OPT("--eagerclose", eagerclose, true),
+	FS_OPT("--eagercreate", eagercreate, true),
+	FS_OPT("--eagerfsync", eagerflush, true),
+	FS_OPT("--eagerlink", eagerlink, true),
+	FS_OPT("--eagermkdir", eagermkdir, true),
+	FS_OPT("--eagerrename", eagerrename, true),
+	FS_OPT("--eagerrmdir", eagerrmdir, true),
+	FS_OPT("--eagersymlink", eagersymlink, true),
+	FS_OPT("--eagerunlink", eagerunlink, true),
+	FS_OPT("--eagerutimens", eagerutimens, true),
+	FS_OPT("--eagerxattr", eagerxattr, true),
+	FS_OPT("--noassumecreateddirempty", assumecreateddirempty, false),
+	FS_OPT("--nocachemissing", cachemissing, false),
+	FS_OPT("--noignorefsync", ignorefsync, false),
+	FS_OPT("--noinaccuratestat", inaccuratestat, false),
+	FS_OPT("--norestrictivedirs", restrictivedirs, false),
+	FS_OPT("--noveryeageraccess", veryeageraccess, false),
+	FS_OPT("--noeageraccess", eageraccess, false),
+	FS_OPT("--noeagerchmod", eagerchmod, false),
+	FS_OPT("--noeagerchown", eagerchown, false),
+	FS_OPT("--noeagerclose", eagerclose, false),
+	FS_OPT("--noeagercreate", eagercreate, false),
+	FS_OPT("--noeagerfsync", eagerflush, false),
+	FS_OPT("--noeagerlink", eagerlink, false),
+	FS_OPT("--noeagermkdir", eagermkdir, false),
+	FS_OPT("--noeagerrename", eagerrename, false),
+	FS_OPT("--noeagerrmdir", eagerrmdir, false),
+	FS_OPT("--noeagersymlink", eagersymlink, false),
+	FS_OPT("--noeagerunlink", eagerunlink, false),
+	FS_OPT("--noeagerutimens", eagerutimens, false),
+	FS_OPT("--noeagerxattr", eagerxattr, false),
+	FUSE_OPT_END
+};
 
 
-
+	
 int main(int argc, char *argv[])
 {
 	umask(0);
@@ -1387,6 +1457,9 @@ int main(int argc, char *argv[])
 #endif
 	cannyfs_oper.flock = cannyfs_flock;
 
+	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
+
+	fuse_opt_parse(&args, &options, cannyfs_opts, nullptr);
 	int toret = fuse_main(argc, argv, &cannyfs_oper, NULL);
 	// TODO: Flush everything BEFORE reporting errors.
 	if (errors.size())
