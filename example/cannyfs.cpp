@@ -226,7 +226,11 @@ public:
 		cannyfs_pipefds pipe;
 		if (!freepipes.pop(pipe))
 		{
-			::pipe(&pipe.first);
+			if (::pipe(&pipe.first) == -1)
+			{
+				cerr << "Unable to get pipe." << std::endl;
+				abort();
+			}
 		}
 
 		return pipe;
@@ -1460,7 +1464,7 @@ int main(int argc, char *argv[])
 	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 
 	fuse_opt_parse(&args, &options, cannyfs_opts, nullptr);
-	int toret = fuse_main(argc, argv, &cannyfs_oper, NULL);
+	int toret = fuse_main(args.argc, args.argv, &cannyfs_oper, NULL);
 	// TODO: Flush everything BEFORE reporting errors.
 	if (errors.size())
 	{
