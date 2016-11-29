@@ -37,7 +37,9 @@
 #endif
 
 #define HAVE_UTIMENSAT
-#define HAVE_SETXATTR
+// Causes lots of calls that we don't model well eagerly yet.
+// #define HAVE_SETXATTR
+#undef HAVE_SETXATTR
 
 
 #include <fuse.h>
