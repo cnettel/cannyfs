@@ -1091,6 +1091,11 @@ static int cannyfs_open(const char *path, struct fuse_file_info *fi)
 	fd = open(path, fi->flags);
 	if (fd == -1)
 		return -errno;
+	{
+		cannyfs_reader b2(cpath, NO_BARRIER);
+		b.fileobj->created = false;
+		b.fileobj->missing = false;
+	}
 
 	getcfh(fi->fh)->setfh(fd);
 	return 0;
