@@ -64,6 +64,7 @@
 #include <sys/file.h> /* flock(2) */
 
 #include <atomic>
+#include <algorithm>
 #include <iostream>
 #include <sstream>
 #include <thread>
@@ -140,7 +141,7 @@ struct cannyfs_filedata
 	queue<function<int(void)> > ops;
 
 	struct stat stats = {};
-	std::atomic<size_t> size{ 0 };
+	std::atomic<off_t> size{ 0 };
 	atomic_bool created{ false };
 	atomic_bool missing{ false };
 
@@ -646,6 +647,7 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 		}
 	}
 	int res = lstat(path, stbuf);
+	stbuf->st_size = max(stbuf->st_size, (off_t) b.fileobj->size);
 	if (res == -1)
 	{
 		int err = errno;
@@ -987,6 +989,7 @@ static int cannyfs_truncate(const char *path, off_t size)
 {
 	fprintf(stderr, "Truncate1?\n");
 	// TODO: FUN STUFF COULD BE DONE HERE TO AVOID WRITES
+	// TODO: Also update fileobj size value.
 	int res;
 
 	res = truncate(path, size);
@@ -1001,6 +1004,7 @@ static int cannyfs_ftruncate(const char *path, off_t size,
 {
 	fprintf(stderr, "Truncate2?\n");
 	// TODO: FUN STUFF COULD BE DONE HERE TO AVOID WRITES
+	// TODO: Also update fileobj size value.
 	int res;
 
 	(void) path;
@@ -1192,7 +1196,7 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 
 	{
 		cannyfs_reader b(cpath, NO_BARRIER | LOCK_WHOLE);
-		size_t maybenewsize = (size_t)(sz + offset);
+		off_t maybenewsize = (off_t)(sz + offset);
 		update_maximum(b.fileobj->size, maybenewsize);
 	}
 	
