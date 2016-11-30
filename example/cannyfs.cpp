@@ -165,6 +165,7 @@ struct cannyfs_filedata
 
 	struct stat stats = {};
 	std::atomic<off_t> size{ 0 };
+	atomic_bool hastruestat{ false };
 	atomic_bool created{ false };
 	atomic_bool missing{ false };
 
@@ -675,17 +676,15 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 			return -ENOENT;
 		}
 
-		bool wascreated = b.fileobj && b.fileobj->created;
-		if (wascreated)
+		bool hasstat = b.fileobj && (b.fileobj->created || b.fileobj->hastruestat);
+		if (hasstat)
 		{
 			*stbuf = b.fileobj->stats;
 			update_maximum(b.fileobj->size, stbuf->st_size);
 
 			return 0;
 		}
-		b.lock.unlock();
-
-		
+		b.lock.unlock();		
 
 		if (options.assumecreateddirempty)
 		{
@@ -809,7 +808,8 @@ static int cannyfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 #endif
 )
 {
-	cannyfs_dirreader b(path, JUST_BARRIER);
+	bf::path parsedpath = path;
+	cannyfs_dirreader b(parsedpath, JUST_BARRIER);
 
 	struct cannyfs_dirp *d = get_dirp(fi);
 
@@ -832,14 +832,14 @@ static int cannyfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 				break;
 			if (options.statwhenreaddir)
 			{
-				cannyfs_add_write(true, (bf::path(path) / d->entry->d_name).string(), [](const std::string& path)
+				cannyfs_add_write(true, (parsedpath / d->entry->d_name).string(), [](const std::string& path)
 				{ 
 					struct stat statdata;
 					if (lstat(path.c_str(), &statdata) == 0)
 					{
 						cannyfs_reader b(path, NO_BARRIER | LOCK_WHOLE);
 						b.fileobj->stats = statdata;
-						b.fileobj->created = true;						
+						b.fileobj->hastruestat = true;						
 					}
 
 					return 0;
