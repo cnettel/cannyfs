@@ -344,16 +344,16 @@ public:
 		{
 			filedata->sync();
 		}
-		if (!silent) cerr << "[CannyFS] Global file sync completed." << std::endl;
+		if (!silent) cerr << "[cannyfs] Global file sync completed." << std::endl;
 	}
 
 	void pollsync()
 	{
 		bool now = false;
-		syncnow.exchange(now);
+		now = syncnow.exchange(now);
 		if (now)
 		{
-			cerr << "[CannyFS] Initializing global file sync." << std::endl;
+			cerr << "[cannyfs] Initializing global file sync." << std::endl;
 		}
 	}
 
