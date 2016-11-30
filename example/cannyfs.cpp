@@ -1517,7 +1517,7 @@ int main(int argc, char *argv[])
 	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 
 	fuse_opt_parse(&args, &options, cannyfs_opts, nullptr);
-	signal(SIGUSR1, [](int) {
+	signal(SIGUSR2, [](int) {
 		filemap.syncnow = true;
 	});
 	int toret = fuse_main(args.argc, args.argv, &cannyfs_oper, NULL);
