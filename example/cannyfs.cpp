@@ -1092,7 +1092,7 @@ static int cannyfs_open(const char *path, struct fuse_file_info *fi)
 	if (fd == -1)
 		return -errno;
 	{
-		cannyfs_reader b2(cpath, NO_BARRIER);
+		cannyfs_reader b2(path, NO_BARRIER);
 		b.fileobj->created = false;
 		b.fileobj->missing = false;
 	}
@@ -1519,7 +1519,6 @@ int main(int argc, char *argv[])
 	fuse_opt_parse(&args, &options, cannyfs_opts, nullptr);
 	signal(SIGUSR1, [](int) {
 		filemap.syncnow = true;
-		return 0;
 	});
 	int toret = fuse_main(args.argc, args.argv, &cannyfs_oper, NULL);
 	cerr << "[cannyfs] Unmounted. Finishing sync.\n";
