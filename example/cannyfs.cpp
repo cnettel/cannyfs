@@ -105,6 +105,7 @@ struct cannyfs_options
 	bool eagerrename = true;
 	bool eagerrmdir = true;
 	bool eagersymlink = true;
+	bool eagertruncate = true;
 	bool eagerunlink = true;
 	bool eagerutimens = true;
 	bool eagerxattr = true;
@@ -1009,33 +1010,27 @@ static int cannyfs_chown(const char *cpath, uid_t uid, gid_t gid)
 	});
 }
 
-static int cannyfs_truncate(const char *path, off_t size)
+static int cannyfs_truncate(const char *cpath, off_t size)
 {
-	fprintf(stderr, "Truncate1?\n");
-	// TODO: FUN STUFF COULD BE DONE HERE TO AVOID WRITES
-	// TODO: Also update fileobj size value.
-	int res;
+	return cannyfs_add_write(options.eagertruncate, cpath, [size](const std::string& path) {
+		int res = truncate(path.c_str(), size);
+		if (res == -1)
+			return -errno;
 
-	res = truncate(path, size);
-	if (res == -1)
-		return -errno;
-
-	return 0;
+		// TODO: Also update fileobj size value.
+	});
 }
 
-static int cannyfs_ftruncate(const char *path, off_t size,
+static int cannyfs_ftruncate(const char *cpath, off_t size,
 			 struct fuse_file_info *fi)
 {
-	fprintf(stderr, "Truncate2?\n");
-	// TODO: FUN STUFF COULD BE DONE HERE TO AVOID WRITES
-	// TODO: Also update fileobj size value.
-	int res;
+	return cannyfs_add_write(options.eagertruncate, cpath, fi, [size](const std::string& path, const fuse_file_info* fi) {
+		int res = ftruncate(getfh(fi), size);
+		if (res == -1)
+			return -errno;
 
-	(void) path;
-
-	res = ftruncate(getfh(fi), size);
-	if (res == -1)
-		return -errno;
+		// TODO: Also update fileobj size value.
+	});
 
 	return 0;
 }
@@ -1433,6 +1428,7 @@ static struct fuse_opt cannyfs_opts[] = {
 	FS_OPT("--eagerrename", eagerrename, true),
 	FS_OPT("--eagerrmdir", eagerrmdir, true),
 	FS_OPT("--eagersymlink", eagersymlink, true),
+	FS_OPT("--eagertruncate", eagertruncate, true),
 	FS_OPT("--eagerunlink", eagerunlink, true),
 	FS_OPT("--eagerutimens", eagerutimens, true),
 	FS_OPT("--eagerxattr", eagerxattr, true),
@@ -1453,6 +1449,7 @@ static struct fuse_opt cannyfs_opts[] = {
 	FS_OPT("--noeagerrename", eagerrename, false),
 	FS_OPT("--noeagerrmdir", eagerrmdir, false),
 	FS_OPT("--noeagersymlink", eagersymlink, false),
+	FS_OPT("--noeagertruncate", eagertruncate, true),
 	FS_OPT("--noeagerunlink", eagerunlink, false),
 	FS_OPT("--noeagerutimens", eagerutimens, false),
 	FS_OPT("--noeagerxattr", eagerxattr, false),
