@@ -661,17 +661,12 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 static int cannyfs_fgetattr(const char *path, struct stat *stbuf,
 			struct fuse_file_info *fi)
 {
-	if (options.inaccuratestat)
-	{
-		return cannyfs_getattr(path, stbuf);
-	}
 	cannyfs_reader b(path, JUST_BARRIER);
 
 	int res;
 
 	(void) path;
 
-	fprintf(stderr, "Stat %s\n", path);
 	res = fstat(getfh(fi), stbuf);
 	if (res == -1)
 		return -errno;
