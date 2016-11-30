@@ -111,6 +111,7 @@ struct cannyfs_options
 	bool ignorefsync = true;
 	bool inaccuratestat = true;
 	bool restrictivedirs = false;
+	bool statwhenreaddir = true;
 	bool veryeageraccess = true;
 	int maxpipesize = 1048576;
 	int numThreads = 16;
@@ -138,7 +139,9 @@ struct cannyfs_filedata
 	set<cannyfs_filedata*> removers;
 
 	void waitremove()
-	{		
+	{
+		// TODO: Should really capture remover state at point of rmdir submission
+		// If same dirname is recreated and files removed from that one as well, bad things will happen
 		set<cannyfs_filedata*> toremove;
 		{
 			unique_lock<mutex> _(datalock);
@@ -823,9 +826,24 @@ static int cannyfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 #endif
 
 		if (!d->entry) {
-			d->entry = readdir(d->dp);
+			d->entry = readdir(d->dp);			
 			if (!d->entry)
 				break;
+			if (options.statwhenreaddir)
+			{
+				cannyfs_add_write(true, (bf::path(path) / d->entry->d_name).string(), [](const std::string& path)
+				{ 
+					struct stat statdata;
+					if (lstat(path.c_str(), &statdata) == 0)
+					{
+						cannyfs_reader b(path, NO_BARRIER | LOCK_WHOLE);
+						b.fileobj->created = true;
+						b.fileobj->stats = statdata;
+					}
+
+					return 0;
+				});
+			}
 		}
 #if FUSE_USE_VERSION >= 30
 #ifdef HAVE_FSTATAT
@@ -1444,6 +1462,7 @@ static struct fuse_opt cannyfs_opts[] = {
 	FS_OPT("--ignorefsync", ignorefsync, true),
 	FS_OPT("--inaccuratestat", inaccuratestat, true),
 	FS_OPT("--restrictivedirs", restrictivedirs, true),
+	FS_OPT("--statwhenreaddir", statwhenreaddir, true),
 	FS_OPT("--veryeageraccess", veryeageraccess, true),
 	FS_OPT("--eageraccess", eageraccess, true),
 	FS_OPT("--eagerchmod", eagerchmod, true),
@@ -1465,6 +1484,7 @@ static struct fuse_opt cannyfs_opts[] = {
 	FS_OPT("--noignorefsync", ignorefsync, false),
 	FS_OPT("--noinaccuratestat", inaccuratestat, false),
 	FS_OPT("--norestrictivedirs", restrictivedirs, false),
+	FS_OPT("--nostatwhenreaddir", statwhenreaddir, false),
 	FS_OPT("--noveryeageraccess", veryeageraccess, false),
 	FS_OPT("--noeageraccess", eageraccess, false),
 	FS_OPT("--noeagerchmod", eagerchmod, false),
