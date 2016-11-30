@@ -486,7 +486,6 @@ public:
 		if (dir)
 		{
 			// Removers are considered all fatally directory-altering events. unlink is always one.
-			cerr << "YES, DIR REMOVE\n";
 			fileobj->waitremove();
 		}
 
