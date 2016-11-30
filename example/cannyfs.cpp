@@ -676,15 +676,16 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 		}
 
 		bool wascreated = b.fileobj && b.fileobj->created;
-		b.lock.unlock();
-
 		if (wascreated)
 		{
 			*stbuf = b.fileobj->stats;
-			stbuf->st_size = b.fileobj->size;
+			update_maximum(b.fileobj->size, stbuf->st_size);
 
 			return 0;
 		}
+		b.lock.unlock();
+
+		
 
 		if (options.assumecreateddirempty)
 		{
@@ -837,8 +838,8 @@ static int cannyfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 					if (lstat(path.c_str(), &statdata) == 0)
 					{
 						cannyfs_reader b(path, NO_BARRIER | LOCK_WHOLE);
-						b.fileobj->created = true;
 						b.fileobj->stats = statdata;
+						b.fileobj->created = true;						
 					}
 
 					return 0;
