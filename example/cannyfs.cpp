@@ -135,6 +135,30 @@ struct cannyfs_filedata
 	condition_variable processed;
 
 	queue<function<int(void)> > ops;
+	set<cannyfs_filedata*> removers;
+
+	void waitremove()
+	{		
+		set<cannyfs_filedata*> toremove;
+		{
+			unique_lock<mutex> _(datalock);
+			toremove = removers;
+		}
+
+		for (auto filedata : toremove)
+		{
+			filedata->sync();
+		}
+
+		{
+			unique_lock<mutex> _(datalock);
+			// Highly inefficient
+			for (auto filedata : toremove)
+			{
+				removers.erase(filedata);
+			}
+		}
+	}
 
 	struct stat stats = {};
 	std::atomic<off_t> size{ 0 };
@@ -459,6 +483,12 @@ public:
 			lock.unlock();
 		}
 
+		if (dir)
+		{
+			// Removers are considered all fatally directory-altering events. unlink is always one.
+			fileobj->waitremove();
+		}
+
 		if (!global && options.restrictivedirs)
 		{
 			if (dir)
@@ -595,7 +625,7 @@ int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& 
 {
 	if (options.verbose) fprintf(stderr, "Adding write %s (A) for %s\n", funcname, path.c_str());
 	return cannyfs_add_write_inner(defer, path, [path = string(path), fun, funcname, dir](bool deferred, int eventId)->int {
-		cannyfs_writer writer(path, LOCK_WHOLE, eventId);
+		cannyfs_writer writer(path, LOCK_WHOLE, eventId, dir);
 		return cannyfs_guarderror(deferred, funcname, path, fun(path));
 	});
 }
@@ -877,10 +907,13 @@ static int cannyfs_unlink(const char *path)
 	// We should KILL all pending IOs, not let them go through to some corpse. Or, well,
 	// we should have a flag to do that.
 	// TODO: cannyfs_clear(path);
+	bf::path parsedpath = path;
 	{
-		cannyfs_reader b(path, NO_BARRIER);
+		cannyfs_reader b(parsedpath, NO_BARRIER);
 		b.fileobj->missing = true;
 		b.fileobj->created = false;
+		cannyfs_reader bp(parsedpath.parent_path(), NO_BARRIER | LOCK_WHOLE);
+		bp.fileobj->removers.insert(b.fileobj);
 	}
 
 	return cannyfs_add_write(options.eagerunlink, path, [](const std::string& path) {
