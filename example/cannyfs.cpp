@@ -6,6 +6,13 @@
   Copyright (C) 2016       Carl Nettelblad <carl.nettelblad@it.uu.se>
 
   Based on fusexmp_fh.c example, notices below.
+  CannyFS needs TBB, Boost, and a reasonably C++14-compliant compiler.
+
+  Compiled like this:
+  g++ cannyfs.cpp -std=c++14 -O3 -lfuse -ltbb -lpthread -lboost_filesystem -lboost_system -D_FILE_OFFSET_BITS=64
+
+
+  Based on:
 
   FUSE: Filesystem in Userspace
   Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
@@ -14,19 +21,6 @@
   This program can be distributed under the terms of the GNU GPL.
   See the file COPYING.
 */
-
-/** @file
- * @tableofcontents
- *
- * cannyfs.cpp - FUSE: Filesystem in Userspace
- *
- * \section section_compile compiling this example
- *
- * g++ -Wall cannyfs.cpp `pkg-config fuse3 --cflags --libs` -lulockmgr -o cannyfs
- *
- * \section section_source the complete source
- * \include cannyfs.cpp
- */
 
 #define FUSE_USE_VERSION 26
 
