@@ -903,19 +903,24 @@ static int cannyfs_mkdir(const char *path, mode_t mode)
 	});
 }
 
+void rm_bookkeeping(const char* path)
+{
+	bf::path parsedpath = path;
+	
+	cannyfs_reader b(parsedpath, NO_BARRIER);
+	b.fileobj->missing = true;
+	b.fileobj->created = false;
+	cannyfs_reader bp(parsedpath.parent_path(), NO_BARRIER | LOCK_WHOLE);
+	bp.fileobj->removers.insert(b.fileobj);
+}
+
+
 static int cannyfs_unlink(const char *path)
 {
 	// We should KILL all pending IOs, not let them go through to some corpse. Or, well,
 	// we should have a flag to do that.
 	// TODO: cannyfs_clear(path);
-	bf::path parsedpath = path;
-	{
-		cannyfs_reader b(parsedpath, NO_BARRIER);
-		b.fileobj->missing = true;
-		b.fileobj->created = false;
-		cannyfs_reader bp(parsedpath.parent_path(), NO_BARRIER | LOCK_WHOLE);
-		bp.fileobj->removers.insert(b.fileobj);
-	}
+	rm_bookkeeping(path);
 
 	return cannyfs_add_write(options.eagerunlink, path, [](const std::string& path) {
 		int res;
@@ -930,11 +935,7 @@ static int cannyfs_unlink(const char *path)
 
 static int cannyfs_rmdir(const char *path)
 {
-	{
-		cannyfs_reader b(path, NO_BARRIER);
-		b.fileobj->missing = true;
-		b.fileobj->created = false;
-	}
+	rm_bookkeeping(path);
 
 	// Quite dangerous unless restrictive dirs is turned on, even if eagerrmdir is false!
 	return cannyfs_add_write(options.eagerrmdir, path, [](const std::string& path) {
