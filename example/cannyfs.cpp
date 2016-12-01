@@ -681,6 +681,7 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 		{
 			*stbuf = b.fileobj->stats;
 			update_maximum(b.fileobj->size, stbuf->st_size);
+			stbuf->st_size = b.fileobj->size;
 
 			return 0;
 		}
@@ -699,6 +700,7 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 	}
 	int res = lstat(path, stbuf);
 	update_maximum(b.fileobj->size, stbuf->st_size);
+	stbuf->st_size = b.fileobj->size;
 
 	if (res == -1)
 	{
@@ -928,6 +930,7 @@ void rm_bookkeeping(const char* path)
 	cannyfs_reader b(parsedpath, NO_BARRIER);
 	b.fileobj->missing = true;
 	b.fileobj->created = false;
+	b.fileobj->size = 0;
 	cannyfs_reader bp(parsedpath.parent_path(), NO_BARRIER | LOCK_WHOLE);
 	bp.fileobj->removers.insert(b.fileobj);
 }
