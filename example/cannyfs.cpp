@@ -1163,7 +1163,6 @@ static int cannyfs_read_buf(const char *path, struct fuse_bufvec **bufp,
 			size_t size, off_t offset, struct fuse_file_info *fi)
 {
 	cannyfs_reader b(path, JUST_BARRIER);
-	cerr << "Read " << path << " from " << offset << " for " << size << " bytes.";
 	struct fuse_bufvec *src;
 
 	(void) path;
