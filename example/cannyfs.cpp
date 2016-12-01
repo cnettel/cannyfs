@@ -1135,7 +1135,6 @@ static int cannyfs_open(const char *path, struct fuse_file_info *fi)
 		return -errno;
 	{
 		cannyfs_reader b2(path, NO_BARRIER);
-		b.fileobj->created = false;
 		b.fileobj->missing = false;
 	}
 
