@@ -179,9 +179,10 @@ struct cannyfs_filedata
 
 	void run();
 
-	void spinevent(unique_lock<mutex>& locallock)
+	// Spin 'til all our events have been handled, or at least up to the passed ID
+	void spinevent(unique_lock<mutex>& locallock, long long targetEvent = numeric_limits<long long>::max())
 	{
-		long long eventId = lastEventId;
+		long long eventId = min(lastEventId, targetEvent);
 		while (firstEventId < eventId)
 		{
 			processed.wait(locallock);
@@ -426,7 +427,7 @@ struct cannyfs_reader
 public:
 	unique_lock<mutex> lock;
 	cannyfs_filedata* fileobj;
-	cannyfs_reader(const bf::path& path, int flag)
+	cannyfs_reader(const bf::path& path, int flag, long long targetEvent = numeric_limits<long long>::max())
 	{
 		if (options.verbose) fprintf(stderr, "Waiting for reading %s\n", path.c_str());
 
@@ -435,7 +436,7 @@ public:
 
 		if (!(flag & NO_BARRIER) && fileobj)
 		{
-			fileobj->spinevent(locallock);
+			fileobj->spinevent(locallock, targetEvent);
 		}
 
 		if (flag & LOCK_WHOLE)
@@ -468,6 +469,16 @@ public:
 	}
 };
 
+// Ensure that the parent directory exists, no-op unless eagermkdir is on
+template<class T> void ensure_parent(T path, long long targetEvent = numeric_limits<long long>::max())
+{
+	if (options.eagermkdir)
+	{
+		// If we create dirs willy-nilly, we need to wait before we do stuff to entries within those dirs
+		cannyfs_reader parentdir(((const bf::path&&) path).parent_path(), JUST_BARRIER, targetEvent);
+	}
+}
+
 struct cannyfs_writer
 {
 private:
@@ -478,7 +489,9 @@ private:
 public:
 	cannyfs_writer(const bf::path& path, int flag, long long eventId, bool dir = false) : eventId(eventId), global(path == "")
 	{
-		if (options.verbose) fprintf(stderr, "Entering write lock for %s\n", path.c_str());	
+		ensure_parent(path, eventId);
+
+		if (options.verbose) fprintf(stderr, "Entering write lock for %s\n", path.c_str());
 		fileobj = filemap.get(path, true, lock);
 
 		if (flag != LOCK_WHOLE)
@@ -520,19 +533,8 @@ public:
 	}
 };
 
-// Ensure that the parent directory exists, no-op unless eagermkdir is on
-template<class T> void ensure_parent(T path)
-{
-	if (options.eagermkdir)
-	{
-		// If we create dirs willy-nilly, we need to wait before we do stuff to entries within those dirs
-		cannyfs_reader parentdir(((const bf::path&&) path).parent_path(), JUST_BARRIER);
-	}
-}
-
 void cannyfs_filedata::run()
 {
-	ensure_parent(path);
 	unique_lock<mutex> locallock(this->datalock);
 	running = true;
 	while (!ops.empty())
@@ -628,7 +630,7 @@ template<class T, typename result_of<T(std::string)>::type = 0>
 int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& path, T fun, bool dir = false)
 {
 	if (options.verbose) fprintf(stderr, "Adding write %s (A) for %s\n", funcname, path.c_str());
-	return cannyfs_add_write_inner(defer, path, [path = string(path), fun, funcname, dir](bool deferred, int eventId)->int {
+	return cannyfs_add_write_inner(defer, path, [path = string(path), fun, funcname, dir](bool deferred, long long eventId)->int {
 		cannyfs_writer writer(path, LOCK_WHOLE, eventId, dir);
 		return cannyfs_guarderror(deferred, funcname, path, fun(path));
 	});
@@ -639,7 +641,7 @@ int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& 
 {
 	if (options.verbose) fprintf(stderr, "Adding write %s (B) for %s\n", funcname, path.c_str());
 	fuse_file_info fi = *origfi;
-	return cannyfs_add_write_inner(defer, path, [path = string(path), fun, fi, funcname, dir](bool deferred, int eventId)->int {
+	return cannyfs_add_write_inner(defer, path, [path = string(path), fun, fi, funcname, dir](bool deferred, long long eventId)->int {
 		cannyfs_writer writer(path, LOCK_WHOLE, eventId, dir);
 		return cannyfs_guarderror(deferred, funcname, path, fun(path, &fi));
 	});
@@ -649,12 +651,12 @@ template<class T, typename result_of<T(std::string, std::string)>::type = 0>
 int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& path1, const std::string& path2, T fun, bool dir = false)
 {
 	if (options.verbose) fprintf(stderr, "Adding write %s (C) for %s\n", funcname, path1.c_str());
-	return cannyfs_add_write_inner(defer, path2, [path1 = string(path1), path2 = string(path2), fun, funcname, dir](bool deferred, int eventId)->int {
+	return cannyfs_add_write_inner(defer, path2, [path1 = string(path1), path2 = string(path2), fun, funcname, dir](bool deferred, long long eventId)->int {
 		//cannyfs_writer writer1(path1, LOCK_WHOLE, eventId);
 
 		// TODO: LOCKING MODEL MESSED UP
-		cannyfs_reader reader(path1, JUST_BARRIER);
-		ensure_parent(path1);
+		cannyfs_reader reader(path1, JUST_BARRIER, eventId);
+		ensure_parent(path1, eventId);
 		cannyfs_writer writer2(path2, LOCK_WHOLE, eventId, dir);
 
 		return cannyfs_guarderror(deferred, funcname, path1, fun(path1, path2));
