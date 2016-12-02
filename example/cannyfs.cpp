@@ -605,27 +605,6 @@ int cannyfs_add_write_inner(bool defer, const std::string& path, auto fun)
 	}
 }
 
-// Borrowed from N3436
-namespace detail {
-	template <typename T>
-	using always_void = void;
-
-	template <typename Expr, typename Enable = void>
-	struct is_callable_impl
-		: std::false_type
-	{};
-
-	template <typename F, typename ...Args>
-	struct is_callable_impl<F(Args...), always_void<std::result_of_t<F(Args...)>>>
-		: std::true_type
-	{};
-}
-
-template <typename Expr>
-struct is_callable
-	: detail::is_callable_impl<Expr>
-{};
-
 template<class T, typename result_of<T(std::string)>::type = 0>
 int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& path, T fun, bool dir = false)
 {
