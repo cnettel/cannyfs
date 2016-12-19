@@ -35,7 +35,7 @@ to several target files, rather than performing a blocking wait for completion f
 
 cannyfs will need to be in your path, if it's found locally, adjust the command and kill jobspec to ./cannyfs
 ```
-#!/usr/bin/Bash
+#!/usr/bin/bash
 mkdir mountpoint
 cannyfs -f -o big_writes -o max_write=65536 -omodules=subdir,subdir=$HOME mountpoint &
 # More correct way is to check whether the mounting point exists
