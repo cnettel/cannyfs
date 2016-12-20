@@ -1561,6 +1561,10 @@ int main(int argc, char *argv[])
 		{
 			cerr << error << "\n";
 		}
+		if (toret == 0)
+		{
+			toret = 1;
+		}
 	}
 	else
 	{
