@@ -1048,6 +1048,7 @@ static int cannyfs_truncate(const char *cpath, off_t size)
 		if (res == -1)
 			return -errno;
 
+		return 0;
 		// TODO: Also update fileobj size value.
 	});
 }
@@ -1060,6 +1061,7 @@ static int cannyfs_ftruncate(const char *cpath, off_t size,
 		if (res == -1)
 			return -errno;
 
+		return 0;
 		// TODO: Also update fileobj size value.
 	});
 
