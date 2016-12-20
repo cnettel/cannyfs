@@ -182,7 +182,7 @@ struct cannyfs_filedata
 	// Spin 'til all our events have been handled, or at least up to the passed ID
 	void spinevent(unique_lock<mutex>& locallock, long long targetEvent = numeric_limits<long long>::max())
 	{
-		long long eventId = min(lastEventId, targetEvent);
+	  long long eventId = min((long long) lastEventId, targetEvent);
 		while (firstEventId < eventId)
 		{
 			processed.wait(locallock);
