@@ -1043,6 +1043,10 @@ static int cannyfs_chown(const char *cpath, uid_t uid, gid_t gid)
 
 static int cannyfs_truncate(const char *cpath, off_t size)
 {
+	{
+		cannyfs_reader b(cpath, NO_BARRIER);
+		b.fileobj->size = size;
+	}
 	return cannyfs_add_write(options.eagertruncate, cpath, [size](const std::string& path) {
 		int res = truncate(path.c_str(), size);
 		if (res == -1)
@@ -1056,6 +1060,10 @@ static int cannyfs_truncate(const char *cpath, off_t size)
 static int cannyfs_ftruncate(const char *cpath, off_t size,
 			 struct fuse_file_info *fi)
 {
+	{
+		cannyfs_reader b(cpath, NO_BARRIER);
+		b.fileobj->size = size;
+	}
 	return cannyfs_add_write(options.eagertruncate, cpath, fi, [size](const std::string& path, const fuse_file_info* fi) {
 		int res = ftruncate(getfh(fi), size);
 		if (res == -1)
@@ -1251,7 +1259,7 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 
 	{
 		cannyfs_reader b(cpath, NO_BARRIER);
-		off_t maybenewsize = (off_t)(sz + offset);
+		off_t maybenewsize = (off_t)(offset + val);
 		update_maximum(b.fileobj->size, maybenewsize);
 	}
 	
