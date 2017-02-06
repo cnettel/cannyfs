@@ -308,7 +308,7 @@ int cannyfs_guarderror(bool defer, const char* funcname, const std::string& path
 	if (defer && res < 0)
 	{
 		stringstream error;
-		error << "ERROR: " << funcname << " for " << path;
+		error << "ERROR: " << funcname << " for " << path << ", code " << -res;
 		cerr << error.str() << "\n";
 		if (options.dieonerror)
 		{
