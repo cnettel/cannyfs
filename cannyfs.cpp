@@ -982,8 +982,15 @@ static int cannyfs_rename(const char *from, const char *to
 		b1.fileobj->missing = true;
 		b2.fileobj->missing = false;
 		b2.fileobj->created = true;
-		// TODO: Forward stats to old file. Now we guess them.
-		b2.fileobj->stats.st_mode = S_IRUSR | S_IWUSR | S_IFREG;
+		if (b1.fileobj->hastruestat)
+		{
+			b1.fileobj->hastruestat = false;
+			b2.fileobj->stats = b1.fileobj->stats;
+		}	
+		else
+		{
+			b2.fileobj->stats.st_mode = S_IRUSR | S_IWUSR | S_IFREG;
+		}
 	}
 	return cannyfs_add_write(options.eagerrename, from, to, [](const std::string& from, const std::string& to) {
 		int res;
@@ -1018,6 +1025,17 @@ static int cannyfs_link(const char *cfrom, const char *cto)
 
 static int cannyfs_chmod(const char *cpath, mode_t mode)
 {
+	{
+		cannyfs_reader b(path, LOCK_WHOLE);
+		b.fileobj->missing = false;
+		b.fileobj->created = true;
+		// TODO: Is this mask defined somewhere for real?
+		mode_t newmode = b.fileobj->stats.st_mode;
+		newmode &= numeric_limits<mode_t>::max - 0xFFF;
+		newmode |= mode;
+
+		b.fileobj->stats.st_mode = newmode;
+	}
 	return cannyfs_add_write(options.eagerchmod, cpath, [mode](const std::string& path) {
 		int res;
 		res = chmod(path.c_str(), mode);
