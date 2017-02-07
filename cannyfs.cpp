@@ -1026,12 +1026,12 @@ static int cannyfs_link(const char *cfrom, const char *cto)
 static int cannyfs_chmod(const char *cpath, mode_t mode)
 {
 	{
-		cannyfs_reader b(path, LOCK_WHOLE);
+		cannyfs_reader b(cpath, LOCK_WHOLE);
 		b.fileobj->missing = false;
 		b.fileobj->created = true;
 		// TODO: Is this mask defined somewhere for real?
 		mode_t newmode = b.fileobj->stats.st_mode;
-		newmode &= numeric_limits<mode_t>::max - 0xFFF;
+		newmode &= numeric_limits<mode_t>::max() - 0xFFF;
 		newmode |= mode;
 
 		b.fileobj->stats.st_mode = newmode;
