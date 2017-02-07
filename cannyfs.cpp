@@ -1115,7 +1115,7 @@ static int cannyfs_create(const char *cpath, mode_t mode, struct fuse_file_info 
 	fi->fh = getnewfh() - fhs.begin();
 	{
 		cannyfs_reader b(cpath, NO_BARRIER | LOCK_WHOLE);
-		b.fileobj->stats.st_mode = S_IRUSR | S_IWUSR | S_IFREG;
+		b.fileobj->stats.st_mode = mode;
 		b.fileobj->created = true;
 		b.fileobj->missing = false;
 	}
