@@ -652,6 +652,11 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 	const bool inaccurate = options.inaccuratestat;
 	cannyfs_reader b(path, inaccurate ? (NO_BARRIER | LOCK_WHOLE) : JUST_BARRIER);
 
+	if (options.verbose && !b.fileobj)
+	{
+		fprintf(stderr, "File obj missing for getattr for %s\n", path);
+	}
+
 	if (inaccurate)
 	{
 		if (options.cachemissing && b.fileobj && b.fileobj->missing)
@@ -1030,8 +1035,6 @@ static int cannyfs_chmod(const char *cpath, mode_t mode)
 {
 	{
 		cannyfs_reader b(cpath, LOCK_WHOLE);
-		b.fileobj->missing = false;
-		b.fileobj->created = true;
 		// TODO: Is this mask defined somewhere for real?
 		mode_t newmode = b.fileobj->stats.st_mode;
 		newmode &= numeric_limits<mode_t>::max() - 0xFFF;
