@@ -656,6 +656,10 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 	{
 		fprintf(stderr, "File obj missing for getattr for %s\n", path);
 	}
+	else
+	{
+		if (options.verbose) fprintf(stderr, "File obj %llx for %s, missing status %d\n", b.fileobj, (int) b.fileobj->missing);
+	}
 
 	if (inaccurate)
 	{
@@ -920,6 +924,7 @@ void rm_bookkeeping(const char* path)
 	b.fileobj->missing = true;
 	b.fileobj->created = false;
 	b.fileobj->size = 0;
+	if (options.verbose) fprintf(stderr, "Rm file obj %llx for %s, missing status %d\n", b.fileobj, (int)b.fileobj->missing);
 	cannyfs_reader bp(parsedpath.parent_path(), NO_BARRIER | LOCK_WHOLE);
 	bp.fileobj->removers.insert(b.fileobj);
 }
