@@ -892,7 +892,7 @@ static int cannyfs_mkdir(const char *path, mode_t mode)
 		cannyfs_reader b(path, LOCK_WHOLE);
 		b.fileobj->missing = false;
 		b.fileobj->created = true;
-		b.fileobj->stats.st_mode = mode;
+		b.fileobj->stats.st_mode = mode | S_IFDIR;
 	}
 
 	return cannyfs_add_write(options.eagermkdir, path, [mode](const std::string& path) {
@@ -1115,7 +1115,7 @@ static int cannyfs_create(const char *cpath, mode_t mode, struct fuse_file_info 
 	fi->fh = getnewfh() - fhs.begin();
 	{
 		cannyfs_reader b(cpath, NO_BARRIER | LOCK_WHOLE);
-		b.fileobj->stats.st_mode = mode;
+		b.fileobj->stats.st_mode = mode | S_IFREG;
 		b.fileobj->created = true;
 		b.fileobj->missing = false;
 	}
