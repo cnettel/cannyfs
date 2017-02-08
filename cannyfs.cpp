@@ -429,7 +429,7 @@ public:
 	cannyfs_filedata* fileobj;
 	cannyfs_reader(const bf::path& path, int flag, long long targetEvent = numeric_limits<long long>::max())
 	{
-		if (options.verbose) fprintf(stderr, "Waiting for reading %s\n", path.c_str());
+		if (options.verbose) fprintf(stderr, "Waiting for reading %s, with flags %d\n", path.c_str(), flag);
 
 		unique_lock<mutex> locallock;
 		fileobj = filemap.get(path, flag & LOCK_WHOLE, locallock, true);
@@ -656,6 +656,7 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 	{
 		if (options.cachemissing && b.fileobj && b.fileobj->missing)
 		{
+			if (options.verbose) fprintf(stderr, "Reporting %s to be missing\n", path);
 			return -ENOENT;
 		}
 
