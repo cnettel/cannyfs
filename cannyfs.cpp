@@ -647,6 +647,8 @@ int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& 
 
 static int cannyfs_getattr(const char *path, struct stat *stbuf)
 {
+	if (options.verbose) fprintf(stderr, "Going to get attributes for %s\n", path);
+
 	const bool inaccurate = options.inaccuratestat;
 	cannyfs_reader b(path, inaccurate ? (NO_BARRIER | LOCK_WHOLE) : JUST_BARRIER);
 
@@ -1111,7 +1113,7 @@ static int cannyfs_utimens(const char *cpath, const struct timespec ts[2])
 
 static int cannyfs_create(const char *cpath, mode_t mode, struct fuse_file_info *fi)
 {
-	if (options.verbose) fprintf(stderr, "Going to create %s\n", cpath);
+	if (options.verbose) fprintf(stderr, "Going to create %s with mode %d\n", cpath, (int) mode);
 	fi->fh = getnewfh() - fhs.begin();
 	{
 		cannyfs_reader b(cpath, NO_BARRIER | LOCK_WHOLE);
