@@ -118,8 +118,7 @@ struct cannyfs_options
 	ALIGNBOOL restrictivedirs = false;
 	ALIGNBOOL statwhenreaddir = true;
 	ALIGNBOOL veryeageraccess = true;
-	int maxpipesize = 1048576;
-	int numThreads = 16;
+	int maxinflight = 300;
 } options;
 
 atomic_llong eventId(0);
@@ -581,7 +580,7 @@ int cannyfs_add_write_inner(bool defer, const std::string& path, auto fun)
 	//fprintf(stderr, "In flight %lld\n", eventIdNow - retiredCount);
 
 	auto sleepUntilRetired = [&eventIdNow] () {
-		while (eventIdNow - retiredCount > 4000)
+		while (eventIdNow - retiredCount > options.maxinflight)
 		{
 			usleep(100);
 		}
@@ -1522,6 +1521,7 @@ static struct fuse_opt cannyfs_opts[] = {
 	FS_OPT("--noeagerunlink", eagerunlink, false),
 	FS_OPT("--noeagerutimens", eagerutimens, false),
 	FS_OPT("--noeagerxattr", eagerxattr, false),
+	FS_OPT("--maxinflight %i", maxinflight, 300),
 	FUSE_OPT_END
 };
 
