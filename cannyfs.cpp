@@ -661,14 +661,9 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 	{
 		fprintf(stderr, "File obj missing for getattr for %s\n", path);
 	}
-	else
-	{
-		if (options.verbose) fprintf(stderr, "File obj %llx for %s, missing status %d\n", b.fileobj, path, (int) b.fileobj->missing);
-	}
 
 	if (inaccurate)
 	{
-		if (options.verbose && b.fileobj) fprintf(stderr, "Inner file obj %llx for %s, missing status %d, would report %d\n", b.fileobj, path, (int)b.fileobj->missing, (int) options.cachemissing);
 		if (options.cachemissing && b.fileobj && (bool) b.fileobj->missing)
 		{
 			if (options.verbose) fprintf(stderr, "Reporting %s to be missing\n", path);
@@ -930,7 +925,6 @@ void rm_bookkeeping(const char* path)
 	b.fileobj->missing = true;
 	b.fileobj->created = false;
 	b.fileobj->size = 0;
-	if (options.verbose) fprintf(stderr, "Rm file obj %llx for %s, missing status %d\n", b.fileobj, path, (int)b.fileobj->missing);
 	cannyfs_reader bp(parsedpath.parent_path(), NO_BARRIER | LOCK_WHOLE);
 	bp.fileobj->removers.insert(b.fileobj);
 }
@@ -1588,12 +1582,10 @@ int main(int argc, char *argv[])
 
 	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 
-	fprintf(stderr, "Cachemissing is first: %d\n", (int)options.cachemissing);
 	fuse_opt_parse(&args, &options, cannyfs_opts, nullptr);
 	signal(SIGUSR2, [](int) {
 		filemap.syncnow = true;
 	});
-	fprintf(stderr, "Cachemissing is then: %d\n", (int)options.cachemissing);
 	int toret = fuse_main(args.argc, args.argv, &cannyfs_oper, NULL);
 	cerr << "[cannyfs] Unmounted. Finishing sync.\n";
 	// Flush everything BEFORE reporting errors.
