@@ -88,7 +88,7 @@ using namespace std;
 // TODO: Check behavior on big endian architectures.
 // We hard-code a dependency on sizeof(int) == 4 here
 // The real culprit is the fuse_opt_parse logic.
-#define ALIGNEDBOOL alignas(4) bool
+#define ALIGNBOOL alignas(4) bool
 
 struct cannyfs_options
 {
