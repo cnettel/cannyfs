@@ -663,6 +663,7 @@ static int cannyfs_getattr(const char *path, struct stat *stbuf)
 
 	if (inaccurate)
 	{
+		if (options.verbose && b.fileobj) fprintf(stderr, "Inner file obj %llx for %s, missing status %d\n", b.fileobj, path, (int)b.fileobj->missing);
 		if (options.cachemissing && b.fileobj && b.fileobj->missing)
 		{
 			if (options.verbose) fprintf(stderr, "Reporting %s to be missing\n", path);
