@@ -268,7 +268,7 @@ public:
 		{
 			if (::pipe(&pipe.first) == -1)
 			{
-				cerr << "Unable to get pipe." << std::endl;
+				cerr << "Unable to get pipe, errno " << errno << "." << std::endl;
 				abort();
 			}
 		}
