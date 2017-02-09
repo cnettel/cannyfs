@@ -599,11 +599,11 @@ int cannyfs_add_write_inner(bool defer, const std::string& path, auto fun)
 		{
 			// Hey, WE will make it running now.
 			fileobj->running = true;
-			lock.unlock();
-			sleepUntilRetired();
+			lock.unlock();			
 			//workQueue.enqueue([fileobj] { fileobj->run(); });
 			thread([fileobj] { fileobj->run(); }).detach();
 		}
+		sleepUntilRetired();
 
 		return 0;
 	}
