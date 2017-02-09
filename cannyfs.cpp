@@ -603,6 +603,10 @@ int cannyfs_add_write_inner(bool defer, const std::string& path, auto fun)
 			//workQueue.enqueue([fileobj] { fileobj->run(); });
 			thread([fileobj] { fileobj->run(); }).detach();
 		}
+		else
+		{
+			lock.unlock();
+		}
 		sleepUntilRetired();
 
 		return 0;
