@@ -85,34 +85,39 @@ namespace bf = boost::filesystem;
 
 using namespace std;
 
+// TODO: Check behavior on big endian architectures.
+// We hard-code a dependency on sizeof(int) == 4 here
+// The real culprit is the fuse_opt_parse logic.
+#define ALIGNEDBOOL alignas(4) bool
+
 struct cannyfs_options
 {
-	bool eageraccess = true;
-	bool eagerchmod = true;
-	bool eagerchown = true;
-	bool eagerclose = true;
-	bool eagercreate = true;
-	bool eagerflush = true;
-	bool eagerfsync = true;
-	bool eagerlink = true;	
-	bool eagermkdir = true;
-	bool eagerrename = true;
-	bool eagerrmdir = true;
-	bool eagersymlink = true;
-	bool eagertruncate = true;
-	bool eagerunlink = true;
-	bool eagerutimens = true;
-	bool eagerxattr = true;
-	bool verbose = false;
-	bool assumecreateddirempty = true;
-	bool cachemissing = true;
-	bool closeverylate = false; // TODO: Expose when implemented
-	bool dieonerror = true;
-	bool ignorefsync = true;
-	bool inaccuratestat = true;
-	bool restrictivedirs = false;
-	bool statwhenreaddir = true;
-	bool veryeageraccess = true;
+	ALIGNBOOL eageraccess = true;
+	ALIGNBOOL eagerchmod = true;
+	ALIGNBOOL eagerchown = true;
+	ALIGNBOOL eagerclose = true;
+	ALIGNBOOL eagercreate = true;
+	ALIGNBOOL eagerflush = true;
+	ALIGNBOOL eagerfsync = true;
+	ALIGNBOOL eagerlink = true;
+	ALIGNBOOL eagermkdir = true;
+	ALIGNBOOL eagerrename = true;
+	ALIGNBOOL eagerrmdir = true;
+	ALIGNBOOL eagersymlink = true;
+	ALIGNBOOL eagertruncate = true;
+	ALIGNBOOL eagerunlink = true;
+	ALIGNBOOL eagerutimens = true;
+	ALIGNBOOL eagerxattr = true;
+	ALIGNBOOL verbose = false;
+	ALIGNBOOL assumecreateddirempty = true;
+	ALIGNBOOL cachemissing = true;
+	ALIGNBOOL closeverylate = false; // TODO: Expose when implemented
+	ALIGNBOOL dieonerror = true;
+	ALIGNBOOL ignorefsync = true;
+	ALIGNBOOL inaccuratestat = true;
+	ALIGNBOOL restrictivedirs = false;
+	ALIGNBOOL statwhenreaddir = true;
+	ALIGNBOOL veryeageraccess = true;
 	int maxpipesize = 1048576;
 	int numThreads = 16;
 } options;
