@@ -1583,10 +1583,12 @@ int main(int argc, char *argv[])
 
 	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 
+	fprintf(stderr, "Cachemissing is first: %d\n", (int) options.cachemissing)
 	fuse_opt_parse(&args, &options, cannyfs_opts, nullptr);
 	signal(SIGUSR2, [](int) {
 		filemap.syncnow = true;
 	});
+	fprintf(stderr, "Cachemissing is then: %d\n", (int) options.cachemissing)
 	int toret = fuse_main(args.argc, args.argv, &cannyfs_oper, NULL);
 	cerr << "[cannyfs] Unmounted. Finishing sync.\n";
 	// Flush everything BEFORE reporting errors.
