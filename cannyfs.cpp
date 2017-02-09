@@ -1354,8 +1354,6 @@ static int cannyfs_release(const char *cpath, struct fuse_file_info *fi)
 
 		return close(fd);
 	});
-
-	return 0;
 }
 
 static int cannyfs_fsync(const char *cpath, int isdatasync,
