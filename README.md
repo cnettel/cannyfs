@@ -18,12 +18,14 @@ complete directory trees, touching or writing to every file within them.
 
 ## Compiling cannyfs
 The packages tbb, boost, and fuse are needed, beyond what's typically available in any Linux distro. In e.g. Ubuntu 16.04, this can be enough to get you going:
-```
+
+```bash
 apt-get install libtbb-dev libfuse-dev libboost-dev
 ```
 
 Then compile using at the very least a g++ compiler from the 5.x tree, 6.x highly recommended (C++ 14 support is needed).
-```
+
+```bash
 g++ cannyfs.cpp -std=c++14 -O3 -lfuse -ltbb -lpthread -lboost_filesystem -lboost_system -D_FILE_OFFSET_BITS=64 -o cannyfs
 ```
 
@@ -34,7 +36,8 @@ quite long to extract, especially if you are doing this over an NFS or CIFS moun
 to several target files, rather than performing a blocking wait for completion for each file.
 
 cannyfs will need to be in your path, if it's found locally, adjust the command and kill jobspec to ./cannyfs
-```
+
+```bash
 #!/usr/bin/bash
 mkdir mountpoint
 cannyfs -f -o big_writes -o max_write=65536 -omodules=subdir,subdir=$HOME mountpoint &
