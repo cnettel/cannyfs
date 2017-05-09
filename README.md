@@ -1,4 +1,4 @@
-#CannyFS
+# CannyFS
 
 CannyFS is a shim file system. That is, it mirrors an existing file system. This is implemented using FUSE, and the source code is a heavily
 modified fork of the https://github.com/libfuse/libfuse example https://github.com/libfuse/libfuse/blob/master/example/passthrough_fh.c (which used to be called fusexmp_fh.c).
