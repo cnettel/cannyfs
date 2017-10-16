@@ -48,3 +48,7 @@ unzip $HOME/archive.zip
 kill %cannyfs
 rmdir mountpoint
 ```
+
+You can also use the handy `cannywrapper.sh' script, assuming `cannyfs' is in your path. That way, you can wrap a single shell command in a CannyFS jail,
+where any file system I/O is tunneled through CannyFS. This is less than ideal since some operations to special file systems are not compatible, but
+it is fine for common I/O workhorse tools such as `rsync'.
