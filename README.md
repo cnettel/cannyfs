@@ -41,8 +41,8 @@ CannyFS will need to be in your path, if it's found locally, adjust the command 
 #!/usr/bin/bash
 mkdir mountpoint
 cannyfs -f -o big_writes -o max_write=65536 -omodules=subdir,subdir=$HOME mountpoint &
-# More correct way is to check whether the mounting point exists
-sleep 5
+# Linux-specific way of checking for mountpoint, arbitrary sleep generally works fine as well
+until mountpoint -q $CANNY_PATH; do sleep 1; done
 cd mountpoint
 unzip $HOME/archive.zip
 kill %cannyfs
