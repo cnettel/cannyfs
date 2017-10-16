@@ -85,36 +85,40 @@ namespace bf = boost::filesystem;
 
 using namespace std;
 
+// TODO: Check behavior on big endian architectures.
+// We hard-code a dependency on sizeof(int) == 4 here
+// The real culprit is the fuse_opt_parse logic.
+#define ALIGNBOOL alignas(4) bool
+
 struct cannyfs_options
 {
-	bool eageraccess = true;
-	bool eagerchmod = true;
-	bool eagerchown = true;
-	bool eagerclose = true;
-	bool eagercreate = true;
-	bool eagerflush = true;
-	bool eagerfsync = true;
-	bool eagerlink = true;	
-	bool eagermkdir = true;
-	bool eagerrename = true;
-	bool eagerrmdir = true;
-	bool eagersymlink = true;
-	bool eagertruncate = true;
-	bool eagerunlink = true;
-	bool eagerutimens = true;
-	bool eagerxattr = true;
-	bool verbose = false;
-	bool assumecreateddirempty = true;
-	bool cachemissing = true;
-	bool closeverylate = false; // TODO: Expose when implemented
-	bool dieonerror = true;
-	bool ignorefsync = true;
-	bool inaccuratestat = true;
-	bool restrictivedirs = false;
-	bool statwhenreaddir = true;
-	bool veryeageraccess = true;
-	int maxpipesize = 1048576;
-	int numThreads = 16;
+	ALIGNBOOL eageraccess = true;
+	ALIGNBOOL eagerchmod = true;
+	ALIGNBOOL eagerchown = true;
+	ALIGNBOOL eagerclose = true;
+	ALIGNBOOL eagercreate = true;
+	ALIGNBOOL eagerflush = true;
+	ALIGNBOOL eagerfsync = true;
+	ALIGNBOOL eagerlink = true;
+	ALIGNBOOL eagermkdir = true;
+	ALIGNBOOL eagerrename = true;
+	ALIGNBOOL eagerrmdir = true;
+	ALIGNBOOL eagersymlink = true;
+	ALIGNBOOL eagertruncate = true;
+	ALIGNBOOL eagerunlink = true;
+	ALIGNBOOL eagerutimens = true;
+	ALIGNBOOL eagerxattr = true;
+	ALIGNBOOL verbose = false;
+	ALIGNBOOL assumecreateddirempty = true;
+	ALIGNBOOL cachemissing = true;
+	ALIGNBOOL closeverylate = false; // TODO: Expose when implemented
+	ALIGNBOOL dieonerror = true;
+	ALIGNBOOL ignorefsync = true;
+	ALIGNBOOL inaccuratestat = true;
+	ALIGNBOOL restrictivedirs = false;
+	ALIGNBOOL statwhenreaddir = true;
+	ALIGNBOOL veryeageraccess = true;
+	int maxinflight = 300;
 } options;
 
 atomic_llong eventId(0);
@@ -264,7 +268,7 @@ public:
 		{
 			if (::pipe(&pipe.first) == -1)
 			{
-				cerr << "Unable to get pipe." << std::endl;
+				cerr << "Unable to get pipe, errno " << errno << "." << std::endl;
 				abort();
 			}
 		}
@@ -429,7 +433,7 @@ public:
 	cannyfs_filedata* fileobj;
 	cannyfs_reader(const bf::path& path, int flag, long long targetEvent = numeric_limits<long long>::max())
 	{
-		if (options.verbose) fprintf(stderr, "Waiting for reading %s\n", path.c_str());
+		if (options.verbose) fprintf(stderr, "Waiting for reading %s, with flags %d\n", path.c_str(), flag);
 
 		unique_lock<mutex> locallock;
 		fileobj = filemap.get(path, flag & LOCK_WHOLE, locallock, true);
@@ -576,7 +580,7 @@ int cannyfs_add_write_inner(bool defer, const std::string& path, auto fun)
 	//fprintf(stderr, "In flight %lld\n", eventIdNow - retiredCount);
 
 	auto sleepUntilRetired = [&eventIdNow] () {
-		while (eventIdNow - retiredCount > 4000)
+		while (eventIdNow - retiredCount > options.maxinflight)
 		{
 			usleep(100);
 		}
@@ -595,11 +599,15 @@ int cannyfs_add_write_inner(bool defer, const std::string& path, auto fun)
 		{
 			// Hey, WE will make it running now.
 			fileobj->running = true;
-			lock.unlock();
-			sleepUntilRetired();
+			lock.unlock();			
 			//workQueue.enqueue([fileobj] { fileobj->run(); });
 			thread([fileobj] { fileobj->run(); }).detach();
 		}
+		else
+		{
+			lock.unlock();
+		}
+		sleepUntilRetired();
 
 		return 0;
 	}
@@ -647,13 +655,21 @@ int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& 
 
 static int cannyfs_getattr(const char *path, struct stat *stbuf)
 {
+	if (options.verbose) fprintf(stderr, "Going to get attributes for %s\n", path);
+
 	const bool inaccurate = options.inaccuratestat;
 	cannyfs_reader b(path, inaccurate ? (NO_BARRIER | LOCK_WHOLE) : JUST_BARRIER);
 
+	if (options.verbose && !b.fileobj)
+	{
+		fprintf(stderr, "File obj missing for getattr for %s\n", path);
+	}
+
 	if (inaccurate)
 	{
-		if (options.cachemissing && b.fileobj && b.fileobj->missing)
+		if (options.cachemissing && b.fileobj && (bool) b.fileobj->missing)
 		{
+			if (options.verbose) fprintf(stderr, "Reporting %s to be missing\n", path);
 			return -ENOENT;
 		}
 
@@ -892,7 +908,7 @@ static int cannyfs_mkdir(const char *path, mode_t mode)
 		cannyfs_reader b(path, LOCK_WHOLE);
 		b.fileobj->missing = false;
 		b.fileobj->created = true;
-		b.fileobj->stats.st_mode = S_IRUSR | S_IWUSR | S_IFDIR;
+		b.fileobj->stats.st_mode = mode | S_IFDIR;
 	}
 
 	return cannyfs_add_write(options.eagermkdir, path, [mode](const std::string& path) {
@@ -982,8 +998,15 @@ static int cannyfs_rename(const char *from, const char *to
 		b1.fileobj->missing = true;
 		b2.fileobj->missing = false;
 		b2.fileobj->created = true;
-		// TODO: Forward stats to old file. Now we guess them.
-		b2.fileobj->stats.st_mode = S_IRUSR | S_IWUSR | S_IFREG;
+		if (b1.fileobj->hastruestat)
+		{
+			b1.fileobj->hastruestat = false;
+			b2.fileobj->stats = b1.fileobj->stats;
+		}	
+		else
+		{
+			b2.fileobj->stats.st_mode = S_IRUSR | S_IWUSR | S_IFREG;
+		}
 	}
 	return cannyfs_add_write(options.eagerrename, from, to, [](const std::string& from, const std::string& to) {
 		int res;
@@ -1018,6 +1041,15 @@ static int cannyfs_link(const char *cfrom, const char *cto)
 
 static int cannyfs_chmod(const char *cpath, mode_t mode)
 {
+	{
+		cannyfs_reader b(cpath, LOCK_WHOLE);
+		// TODO: Is this mask defined somewhere for real?
+		mode_t newmode = b.fileobj->stats.st_mode;
+		newmode &= numeric_limits<mode_t>::max() - 0xFFF;
+		newmode |= mode;
+
+		b.fileobj->stats.st_mode = newmode;
+	}
 	return cannyfs_add_write(options.eagerchmod, cpath, [mode](const std::string& path) {
 		int res;
 		res = chmod(path.c_str(), mode);
@@ -1093,11 +1125,11 @@ static int cannyfs_utimens(const char *cpath, const struct timespec ts[2])
 
 static int cannyfs_create(const char *cpath, mode_t mode, struct fuse_file_info *fi)
 {
-	if (options.verbose) fprintf(stderr, "Going to create %s\n", cpath);
+	if (options.verbose) fprintf(stderr, "Going to create %s with mode %d\n", cpath, (int) mode);
 	fi->fh = getnewfh() - fhs.begin();
 	{
 		cannyfs_reader b(cpath, NO_BARRIER | LOCK_WHOLE);
-		b.fileobj->stats.st_mode = S_IRUSR | S_IWUSR | S_IFREG;
+		b.fileobj->stats.st_mode = mode | S_IFREG;
 		b.fileobj->created = true;
 		b.fileobj->missing = false;
 	}
@@ -1326,8 +1358,6 @@ static int cannyfs_release(const char *cpath, struct fuse_file_info *fi)
 
 		return close(fd);
 	});
-
-	return 0;
 }
 
 static int cannyfs_fsync(const char *cpath, int isdatasync,
@@ -1493,6 +1523,7 @@ static struct fuse_opt cannyfs_opts[] = {
 	FS_OPT("--noeagerunlink", eagerunlink, false),
 	FS_OPT("--noeagerutimens", eagerutimens, false),
 	FS_OPT("--noeagerxattr", eagerxattr, false),
+	FS_OPT("--maxinflight %i", maxinflight, 300),
 	FUSE_OPT_END
 };
 
