@@ -17,7 +17,8 @@ echo Temporary mount in $CANNY_PATH
 ./cannyfs -f -o big_writes -o max_write=65536 $CANNY_PATH &
 until mountpoint -q $CANNY_PATH; do sleep 1 && echo "Waiting for mountpoint"; done
 
-# Since we trust ourselves and use chroot for convenience
+# Since we trust ourselves and use chroot for convenience, fakechroot is fine
+# i.e. call the full script using fakechroot cannywrapper.sh
 chroot $CANNY_PATH bash -c "cd $PWD && $*"
 
 kill %./cannyfs
