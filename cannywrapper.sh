@@ -12,14 +12,15 @@
 # Let's use lots of files (actual files as well as kernel pipes)
 ulimit -u 10000
 
-CANNY_PATH=`mktemp -t cannywrapper.XXXXXXXXXX || exit 1`
-cannyfs -f -o big_writes -o max_write=65536 $CANNY_PATH &
+CANNY_PATH=`mktemp -d -t cannywrapper.XXXXXXXXXX || exit 1`
+echo Temporary mount in $CANNY_PATH
+./cannyfs -f -o big_writes -o max_write=65536 $CANNY_PATH &
 until mountpoint -q $CANNY_PATH; do sleep 1 && echo "Waiting for mountpoint"; done
 
 # Since we trust ourselves and use chroot for convenience
 chroot $CANNY_PATH bash -c "cd $PWD && $*"
 
-kill %cannyfs
-wait %cannyfs
+kill %./cannyfs
+wait %./cannyfs
 
 rmdir $CANNY_PATH
