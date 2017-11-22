@@ -20,7 +20,7 @@ complete directory trees, touching or writing to every file within them.
 The packages tbb, boost, and fuse are needed, beyond what's typically available in any Linux distro. In e.g. Ubuntu 16.04, this can be enough to get you going:
 
 ```bash
-sudo apt-get install libtbb-dev libfuse-dev libboost-dev
+sudo apt-get install libtbb-dev libfuse-dev libboost-dev libboost-filesystem-dev libboost-system-dev
 ```
 
 Then compile using at the very least a g++ compiler from the 5.x tree, 6.x highly recommended (C++ 14 support is needed).
@@ -49,6 +49,6 @@ kill %cannyfs
 rmdir mountpoint
 ```
 
-You can also use the handy `cannywrapper.sh' script, assuming `cannyfs' is in your path. That way, you can wrap a single shell command in a CannyFS jail,
+You can also use the handy `cannywrapper.sh` script, assuming `cannyfs` is in your path. That way, you can wrap a single shell command in a CannyFS jail,
 where any file system I/O is tunneled through CannyFS. This is less than ideal since some operations to special file systems are not compatible, but
 it is fine for common I/O workhorse tools such as `rsync'.
