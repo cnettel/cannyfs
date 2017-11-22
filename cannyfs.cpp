@@ -140,6 +140,7 @@ struct cannyfs_filedata
 	condition_variable processed;
 
 	queue<function<int(void)> > ops;
+	queue<long long> opIds;
 	set<cannyfs_filedata*> removers;
 
 	void waitremove()
@@ -187,6 +188,15 @@ struct cannyfs_filedata
 	void spinevent(unique_lock<mutex>& locallock, long long targetEvent = numeric_limits<long long>::max())
 	{
 	  long long eventId = min((long long) lastEventId, targetEvent);
+	  long long maxmin = 0;
+	  for (long long id : opIds)
+	  {
+		  if (id > eventId) break;
+
+		  maxmin = id;		  
+	  }
+	  eventId = maxmin;
+	  
 		while (firstEventId < eventId)
 		{
 			processed.wait(locallock);
@@ -543,12 +553,13 @@ void cannyfs_filedata::run()
 	running = true;
 	while (!ops.empty())
 	{
-		function<int(void)> op = ops.front();
+		function<int(void)> op = ops.front();		
 		ops.pop();
 
 		locallock.unlock();
 		op();
 		locallock.lock();
+		opIds.pop();
 	}
 	running = false;
 }
@@ -595,9 +606,9 @@ int cannyfs_add_write_inner(bool defer, const std::string& path, auto fun)
 	else
 	{
 		fileobj->ops.emplace(worker);
+		fileobj->opIds.emplace(eventIdNow);
 		if (!fileobj->running)
 		{
-			// Hey, WE will make it running now.
 			fileobj->running = true;
 			lock.unlock();			
 			//workQueue.enqueue([fileobj] { fileobj->run(); });
