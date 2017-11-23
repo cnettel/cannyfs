@@ -189,7 +189,7 @@ struct cannyfs_filedata
 	void spinevent(unique_lock<mutex>& locallock, long long targetEvent = numeric_limits<long long>::max())
 	{
 	  long long eventId = min((long long) lastEventId, targetEvent);
-	  long long maxmin = 0;
+	  long long maxmin = -1;
 	  for (long long id : opIds)
 	  {
 		  if (id > eventId) break;
