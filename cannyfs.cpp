@@ -71,6 +71,7 @@
 #include <string>
 #include <functional>
 #include <queue>
+#include <deque>
 
 
 // TODO: Remove TBB dependency?
@@ -140,7 +141,7 @@ struct cannyfs_filedata
 	condition_variable processed;
 
 	queue<function<int(void)> > ops;
-	queue<long long> opIds;
+	deque<long long> opIds;
 	set<cannyfs_filedata*> removers;
 
 	void waitremove()
@@ -559,7 +560,7 @@ void cannyfs_filedata::run()
 		locallock.unlock();
 		op();
 		locallock.lock();
-		opIds.pop();
+		opIds.pop_front();
 	}
 	running = false;
 }
@@ -606,7 +607,7 @@ int cannyfs_add_write_inner(bool defer, const std::string& path, auto fun)
 	else
 	{
 		fileobj->ops.emplace(worker);
-		fileobj->opIds.emplace(eventIdNow);
+		fileobj->opIds.emplace_back(eventIdNow);
 		if (!fileobj->running)
 		{
 			fileobj->running = true;
