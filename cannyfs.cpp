@@ -536,9 +536,11 @@ public:
 
 	~cannyfs_writer()
 	{
-		unique_lock<mutex> endlock(fileobj->datalock);
-		update_maximum(fileobj->firstEventId, eventId);
-		fileobj->processed.notify_all();
+		{
+			unique_lock<mutex> endlock(fileobj->datalock);
+			update_maximum(fileobj->firstEventId, eventId);
+			fileobj->processed.notify_all();
+		}
 
 		if (!global && options.restrictivedirs)
 		{
