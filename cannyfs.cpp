@@ -548,7 +548,7 @@ public:
 		if (options.verbose) fprintf(stderr, "Entering write lock for %s\n", path.c_str());
 		fileobj = filemap.get(path, true, lock);
 
-		if (flag != LOCK_WHOLE)
+		if (!(flag & LOCK_WHOLE))
 		{
 			if (options.verbose) fprintf(stderr, "Leaving write lock early for %s\n", path.c_str());
 			lock.unlock();
@@ -956,7 +956,7 @@ static int cannyfs_mknod(const char *path, mode_t mode, dev_t rdev)
 static int cannyfs_mkdir(const char *path, mode_t mode)
 {
 	{
-		cannyfs_reader b(path, LOCK_WHOLE);
+		cannyfs_reader b(path, NO_BARRIER | LOCK_WHOLE);
 		b.fileobj->missing = false;
 		b.fileobj->created = true;
 		b.fileobj->stats.st_mode = mode | S_IFDIR;
@@ -1093,7 +1093,7 @@ static int cannyfs_link(const char *cfrom, const char *cto)
 static int cannyfs_chmod(const char *cpath, mode_t mode)
 {
 	{
-		cannyfs_reader b(cpath, LOCK_WHOLE);
+		cannyfs_reader b(cpath, NO_BARRIER | LOCK_WHOLE);
 		// TODO: Is this mask defined somewhere for real?
 		mode_t newmode = b.fileobj->stats.st_mode;
 		newmode &= numeric_limits<mode_t>::max() - 0xFFF;
