@@ -266,9 +266,12 @@ public:
 		unique_lock<mutex> guard(lock);		
 		while (true)
 		{
-			readyWorkers++;
-			available.wait(guard);
-			readyWorkers--;
+			if (!toRun.size())
+			{
+				readyWorkers++;
+				available.wait(guard);
+				readyWorkers--;
+			}
 			cannyfs_filedata* what = toRun.front();
 			toRun.pop();
 
