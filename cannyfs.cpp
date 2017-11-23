@@ -266,7 +266,7 @@ public:
 		unique_lock<mutex> guard(lock);		
 		while (true)
 		{
-			if (!toRun.size())
+			while (!toRun.size())
 			{
 				readyWorkers++;
 				available.wait(guard);
