@@ -252,6 +252,48 @@ struct cannyfs_filehandle
 typedef concurrent_vector<cannyfs_filehandle> fhstype;
 fhstype fhs;
 boost::lockfree::stack<fhstype::iterator> freefhs(16);
+
+struct cannyfs_threads
+{
+private:
+	queue<cannyfs_filedata*> toRun;
+	mutex lock;
+	condition_variable available;
+	int readyWorkers{ 0 };
+public:
+	void threadWorker()
+	{
+		unique_lock<mutex> guard(lock);		
+		while (true)
+		{
+			while (!toRun.size())
+			{
+				readyWorkers++;
+				available.wait(guard);
+				readyWorkers--;
+			}
+			cannyfs_filedata* what = toRun.front();
+			toRun.pop();
+
+			guard.unlock();
+			what->run();
+			guard.lock();
+		}
+	}
+
+	void add(cannyfs_filedata* dataToRun)
+	{
+		lock_guard<mutex> guard(lock);
+		toRun.push(dataToRun);
+		if (readyWorkers == 0)
+		{
+			thread([this] { threadWorker(); }).detach();
+		}
+		available.notify_one();
+	}
+} threads;
+
+
 concurrent_vector<string> errors;
 
 typedef pair<int, int> cannyfs_pipefds;
@@ -616,7 +658,7 @@ int cannyfs_add_write_inner(bool defer, const std::string& path, auto fun)
 			fileobj->running = true;
 			lock.unlock();			
 			//workQueue.enqueue([fileobj] { fileobj->run(); });
-			thread([fileobj] { fileobj->run(); }).detach();
+			threads.add(fileobj);
 		}
 		else
 		{
