@@ -407,6 +407,7 @@ struct comp {
 struct cannyfs_filemap
 {
 private:
+	// NOTE: We rely on the container not moving our objects.
 	set<cannyfs_filedata, comp> data;
 	shared_timed_mutex lock;
 public:
@@ -578,9 +579,11 @@ public:
 
 	~cannyfs_writer()
 	{
-		unique_lock<mutex> endlock(fileobj->datalock);
-		update_maximum(fileobj->firstEventId, eventId);
-		fileobj->processed.notify_all();
+		{
+			unique_lock<mutex> endlock(fileobj->datalock);
+			update_maximum(fileobj->firstEventId, eventId);
+			fileobj->processed.notify_all();
+		}
 
 		if (!global && options.restrictivedirs)
 		{
