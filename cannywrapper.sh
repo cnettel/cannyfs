@@ -15,7 +15,7 @@ ulimit -n 10000
 
 CANNY_PATH=`mktemp -d -t cannywrapper.XXXXXXXXXX || exit 1`
 echo Temporary mount in $CANNY_PATH
-./cannyfs -f -o kernel_cache -o big_writes -o max_write=65536 $CANNY_PATH &
+./cannyfs -f -o kernel_cache -o big_writes -o max_write=65536 -o attr_timeout=86400 -o negative_timeout=86400 -o entry_timeout=86400 $CANNY_PATH &
 until mountpoint -q $CANNY_PATH; do sleep 1 && echo "Waiting for mountpoint"; done
 
 # Since we trust ourselves and use chroot for convenience, fakechroot is fine
