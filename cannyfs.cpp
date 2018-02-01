@@ -400,7 +400,7 @@ vector<cannyfs_closer> closes;
 struct comp {
 	bool operator()(const cannyfs_filedata& lhs, const cannyfs_filedata& rhs)
 	{
-		return lhs.path < rhs.path;
+		return lhs.path.native() < rhs.path.native();
 	}
 };
 
@@ -449,9 +449,11 @@ public:
 		cannyfs_filedata* result = nullptr;
 		auto locktransferline = [&] { lock = unique_lock<mutex>(lockdata ? result->datalock : result->oplock); };
 
-		{
+		bf::path normal_path = path.lexically_normal();
+
+		{			
 			shared_lock<shared_timed_mutex> maplock(this->lock);
-			auto i = data.find(path);
+			auto i = data.find(normal_path);
 			if (i != data.end())
 			{
 				result = const_cast<cannyfs_filedata*>(&*i);
@@ -463,14 +465,14 @@ public:
 		if (always && !result)
 		{
 			unique_lock<shared_timed_mutex> maplock(this->lock);
-			auto i = data.find(path);
+			auto i = data.find(normal_path);
 			if (i != data.end())
 			{
 				result = const_cast<cannyfs_filedata*>(&*i);
 			}
 			else
 			{
-				result = const_cast<cannyfs_filedata*>(&(*data.emplace(path).first));
+				result = const_cast<cannyfs_filedata*>(&(*data.emplace(normal_path).first));
 			}
 			maplock.unlock();
 			locktransferline();
@@ -888,7 +890,7 @@ static int cannyfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 				break;
 			if (options.statwhenreaddir)
 			{
-				cannyfs_add_write(true, (parsedpath / d->entry->d_name).string(), [](const std::string& path)
+				cannyfs_add_write(true, (parsedpath / d->entry->d_name).native(), [](const std::string& path)
 				{ 
 					struct stat statdata;
 					if (lstat(path.c_str(), &statdata) == 0)
@@ -1032,7 +1034,7 @@ static int cannyfs_symlink(const char *from, const char *to)
 		b.fileobj->created = true;
 		b.fileobj->stats.st_mode = S_IRUSR | S_IWUSR | S_IFLNK;
 	}
-	return cannyfs_add_write(options.eagersymlink, (bf::path(to).parent_path() / from).string(), to, [fromreal = string(from)](const std::string& from, const std::string& to) {
+	return cannyfs_add_write(options.eagersymlink, (bf::path(to).parent_path() / from).native(), to, [fromreal = string(from)](const std::string& from, const std::string& to) {
 		int res;
 
 		res = symlink(fromreal.c_str(), to.c_str());
