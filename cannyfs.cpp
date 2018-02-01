@@ -596,7 +596,7 @@ void cannyfs_filedata::run()
 	running = true;
 	while (!ops.empty())
 	{
-		function<int(void)> op = ops.front();		
+		function<int(void)> op = std::move(ops.front());
 		ops.pop();
 
 		locallock.unlock();
