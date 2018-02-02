@@ -349,7 +349,7 @@ public:
 	}
 } piper;
 
-fhstype::iterator getnewfh(cannyfs_filedat* obj)
+fhstype::iterator getnewfh(cannyfs_filedata* obj)
 {
 	fhstype::iterator toreturn;
 	if (!freefhs.pop(toreturn))
@@ -553,6 +553,8 @@ public:
 	}
 };
 
+bf::path empty_path("");
+
 // Ensure that the parent directory exists, no-op unless eagermkdir is on
 template<class T> void ensure_parent(T path, long long targetEvent = numeric_limits<long long>::max())
 {
@@ -599,7 +601,7 @@ public:
 				cannyfs_dirreader(path, JUST_BARRIER);
 			}
 			unique_lock<mutex> globallock;
-			cannyfs_filedata* globalfileobj = filemap.get("", true, globallock, true);
+			cannyfs_filedata* globalfileobj = filemap.get(empty_path, true, globallock, true);
 			update_maximum(globalfileobj->lastEventId, eventId);
 		}
 	}
