@@ -570,7 +570,7 @@ private:
 	bool global;
 public:
 	template<class pathtype>
-	cannyfs_writer(const bf::path& path, int flag, long long eventId, bool dir = false) : eventId(eventId), global(path == "")
+	cannyfs_writer(const pathtype& path, int flag, long long eventId, bool dir = false) : eventId(eventId), global(path == "")
 	{
 		ensure_parent(path, eventId);
 
