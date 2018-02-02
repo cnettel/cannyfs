@@ -216,8 +216,9 @@ struct cannyfs_filehandle
 	mutex lock;
 	int64_t fd;
 	condition_variable opened;
+	cannyfs_filedata* obj;
 
-	cannyfs_filehandle() : fd(-1)
+	cannyfs_filehandle() : fd(-1), obj(nullptr)
 	{
 	}
 
@@ -340,14 +341,15 @@ public:
 	}
 } piper;
 
-fhstype::iterator getnewfh()
+fhstype::iterator getnewfh(cannyfs_filedat* obj)
 {
 	fhstype::iterator toreturn;
-	if (freefhs.pop(toreturn))
+	if (!freefhs.pop(toreturn))
 	{
-		return toreturn;
+		toreturn = fhs.grow_by(1);
 	}
-	return fhs.grow_by(1);
+	
+	toreturn->fileobj = obj;
 }
 
 cannyfs_filehandle* getcfh(int fd)
@@ -849,7 +851,7 @@ static int cannyfs_opendir(const char *path, struct fuse_file_info *fi)
 	d->offset = 0;
 	d->entry = NULL;
 
-	fi->fh = getnewfh() - fhs.begin();
+	fi->fh = getnewfh(b.fileobj) - fhs.begin();
 	getcfh(fi->fh)->setfh((unsigned long)d);
 	return 0;
 }
@@ -1184,14 +1186,14 @@ static int cannyfs_utimens(const char *cpath, const struct timespec ts[2])
 
 static int cannyfs_create(const char *cpath, mode_t mode, struct fuse_file_info *fi)
 {
-	if (options.verbose) fprintf(stderr, "Going to create %s with mode %d\n", cpath, (int) mode);
-	fi->fh = getnewfh() - fhs.begin();
+	if (options.verbose) fprintf(stderr, "Going to create %s with mode %d\n", cpath, (int) mode);	
 	{
 		cannyfs_reader b(cpath, NO_BARRIER | LOCK_WHOLE);
 		b.fileobj->stats.st_mode = mode | S_IFREG;
 		b.fileobj->created = true;
 		b.fileobj->missing = false;
-	}
+		fi->fh = getnewfh(b.fileobj) - fhs.begin();
+	}	
 
 	return cannyfs_add_write(options.eagercreate, cpath, fi, [mode](const std::string& path, const fuse_file_info* fi)
 	{
@@ -1212,13 +1214,13 @@ static int cannyfs_open(const char *path, struct fuse_file_info *fi)
 	if (options.verbose) fprintf(stderr, "Going to open %s\n", path);
 	int fd;
 
-	fi->fh = getnewfh() - fhs.begin();
+	fi->fh = getnewfh(b.fileobj) - fhs.begin();
 	fd = open(path, fi->flags);
 	if (fd == -1)
 		return -errno;
 	{
 		cannyfs_reader b2(path, NO_BARRIER);
-		b.fileobj->missing = false;
+		b2.fileobj->missing = false;
 	}
 
 	getcfh(fi->fh)->setfh(fd);
