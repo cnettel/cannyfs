@@ -509,7 +509,7 @@ template<class pathtype> const char* c_str(const pathtype& path)
 	return path.c_str();
 }
 
-template<> const char* c_str(const char* path)
+const char* c_str(const char* path)
 {
 	return path;
 }
