@@ -509,7 +509,7 @@ template<class pathtype> const char* c_str(const pathtype& path)
 	return path.c_str();
 }
 
-const char* c_str(const char* path)
+const char* c_str(const char* const& path)
 {
 	return path;
 }
@@ -521,7 +521,7 @@ public:
 	cannyfs_filedata* fileobj;
 	template<class pathtype> cannyfs_reader(const pathtype& path, int flag, long long targetEvent = numeric_limits<long long>::max())
 	{
-		if (options.verbose) fprintf(stderr, "Waiting for reading %s, with flags %d\n", path.c_str(), flag);
+		if (options.verbose) fprintf(stderr, "Waiting for reading %s, with flags %d\n", c_str(path), flag);
 
 		unique_lock<mutex> locallock;
 		fileobj = filemap.get(path, flag & LOCK_WHOLE, locallock, true);
@@ -536,7 +536,7 @@ public:
 			swap(lock, locallock);
 		}
 
-		if (options.verbose) fprintf(stderr, "Got reader lock %s\n", path.c_str());
+		if (options.verbose) fprintf(stderr, "Got reader lock %s\n", c_str(path));
 	}
 };
 
@@ -588,12 +588,12 @@ public:
 	{
 		ensure_parent(path, eventId);
 
-		if (options.verbose) fprintf(stderr, "Entering write lock for %s\n", path.c_str());
+		if (options.verbose) fprintf(stderr, "Entering write lock for %s\n", c_str(path));
 		fileobj = filemap.get(path, true, lock);
 
 		if (!(flag & LOCK_WHOLE))
 		{
-			if (options.verbose) fprintf(stderr, "Leaving write lock early for %s\n", path.c_str());
+			if (options.verbose) fprintf(stderr, "Leaving write lock early for %s\n", c_str(path));
 			lock.unlock();
 		}
 
