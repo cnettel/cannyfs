@@ -357,7 +357,7 @@ fhstype::iterator getnewfh(cannyfs_filedata* obj)
 		toreturn = fhs.grow_by(1);
 	}
 	
-	toreturn->fileobj = obj;
+	toreturn->obj = obj;
 }
 
 cannyfs_filehandle* getcfh(int fd)
