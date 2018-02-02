@@ -711,7 +711,7 @@ int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& 
 	if (options.verbose) fprintf(stderr, "Adding write %s (B) for %s\n", funcname, path.c_str());
 	fuse_file_info fi = *origfi;
 	return cannyfs_add_write_inner(defer, path, [path = string(path), fun, fi, funcname, dir](bool deferred, long long eventId)->int {
-		cannyfs_writer writer(getcfh(fi.fh), LOCK_WHOLE, eventId, dir);
+		cannyfs_writer writer(*getcfh(fi.fh), LOCK_WHOLE, eventId, dir);
 		return cannyfs_guarderror(deferred, funcname, path, fun(path, &fi));
 	});
 }
@@ -1370,7 +1370,7 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 	}
 
 	{
-		cannyfs_reader b(cfh, NO_BARRIER);
+		cannyfs_reader b(*cfh, NO_BARRIER);
 		off_t maybenewsize = (off_t)(offset + val);
 		update_maximum(b.fileobj->size, maybenewsize);
 	}
