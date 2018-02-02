@@ -446,21 +446,24 @@ public:
 		}
 	}
 
-	cannyfs_filedata* get(const bf::path& path, bool always, unique_lock<mutex>& lock, bool lockdata = false)
+private:
+	cannyfs_filedata* get_filedata(const cannyfs_filehandle& fh)
+	{
+		return fh.obj;
+	}
+	
+	cannyfs_filedata* get_filedata(const bf::path& path, bool always)
 	{
 		cannyfs_filedata* result = nullptr;
-		auto locktransferline = [&] { lock = unique_lock<mutex>(lockdata ? result->datalock : result->oplock); };
-
 		bf::path normal_path = path.lexically_normal();
-
-		{			
+		{
 			shared_lock<shared_timed_mutex> maplock(this->lock);
 			auto i = data.find(normal_path);
 			if (i != data.end())
 			{
 				result = const_cast<cannyfs_filedata*>(&*i);
 				maplock.unlock();
-				locktransferline();
+
 			}
 		}
 
@@ -477,8 +480,17 @@ public:
 				result = const_cast<cannyfs_filedata*>(&(*data.emplace(normal_path).first));
 			}
 			maplock.unlock();
-			locktransferline();
 		}
+
+		return result;
+	}
+
+public:
+
+	cannyfs_filedata* get(const bf::path& path, bool always, unique_lock<mutex>& lock, bool lockdata = false)
+	{
+		cannyfs_filedata* result = get_filedata(path, always);
+		lock = unique_lock<mutex>(lockdata ? result->datalock : result->oplock);
 
 		return result;
 	}
@@ -489,7 +501,7 @@ struct cannyfs_reader
 public:
 	unique_lock<mutex> lock;
 	cannyfs_filedata* fileobj;
-	cannyfs_reader(const bf::path& path, int flag, long long targetEvent = numeric_limits<long long>::max())
+	template<class pathtype> cannyfs_reader(const pathtype& path, int flag, long long targetEvent = numeric_limits<long long>::max())
 	{
 		if (options.verbose) fprintf(stderr, "Waiting for reading %s, with flags %d\n", path.c_str(), flag);
 
@@ -690,7 +702,7 @@ int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& 
 	if (options.verbose) fprintf(stderr, "Adding write %s (B) for %s\n", funcname, path.c_str());
 	fuse_file_info fi = *origfi;
 	return cannyfs_add_write_inner(defer, path, [path = string(path), fun, fi, funcname, dir](bool deferred, long long eventId)->int {
-		cannyfs_writer writer(path, LOCK_WHOLE, eventId, dir);
+		cannyfs_writer writer(getcfh(fi.fh), LOCK_WHOLE, eventId, dir);
 		return cannyfs_guarderror(deferred, funcname, path, fun(path, &fi));
 	});
 }
@@ -1349,7 +1361,7 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 	}
 
 	{
-		cannyfs_reader b(cpath, NO_BARRIER);
+		cannyfs_reader b(cfh, NO_BARRIER);
 		off_t maybenewsize = (off_t)(offset + val);
 		update_maximum(b.fileobj->size, maybenewsize);
 	}
