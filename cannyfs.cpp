@@ -616,7 +616,7 @@ public:
 
 		if (!global && options.restrictivedirs)
 		{
-			cannyfs_writer("", JUST_BARRIER, eventId);
+			cannyfs_writer(empty_path, JUST_BARRIER, eventId);
 		}
 		if (options.verbose) fprintf(stderr, "Leaving write lock for %s\n", fileobj->path.c_str());
 	}
