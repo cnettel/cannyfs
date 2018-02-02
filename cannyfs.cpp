@@ -455,7 +455,7 @@ public:
 	}
 
 private:
-	cannyfs_filedata* get_filedata(const cannyfs_filehandle& fh)
+	cannyfs_filedata* get_filedata(const cannyfs_filehandle& fh, bool always)
 	{
 		return fh.obj;
 	}
