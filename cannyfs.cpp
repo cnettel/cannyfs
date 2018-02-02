@@ -514,6 +514,16 @@ const char* c_str(const char* const& path)
 	return path;
 }
 
+bf::path& get_path(const bf::path& path)
+{
+	return path;
+}
+
+bf::path& get_path(const cannyfs_filehandle handle)
+{
+	return handle->obj.path;
+}
+
 struct cannyfs_reader
 {
 public:
@@ -586,7 +596,7 @@ public:
 	template<class pathtype>
 	cannyfs_writer(const pathtype& path, int flag, long long eventId, bool dir = false) : eventId(eventId), global(strcmp(path.c_str(), "") == 0)
 	{
-		ensure_parent(path, eventId);
+		ensure_parent(get_path(path), eventId);
 
 		if (options.verbose) fprintf(stderr, "Entering write lock for %s\n", c_str(path));
 		fileobj = filemap.get(path, true, lock);
