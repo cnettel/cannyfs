@@ -504,6 +504,16 @@ public:
 	}
 } filemap;
 
+template<class pathtype> const char* c_str(const pathtype& path) const
+{
+	return path.c_str();
+}
+
+template<> const char* c_str(const char* path) const
+{
+	return path;
+}
+
 struct cannyfs_reader
 {
 public:
