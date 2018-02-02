@@ -545,7 +545,9 @@ struct cannyfs_dirreader : cannyfs_reader
 private:
 public:
 	cannyfs_dirreader() = delete;
-	cannyfs_dirreader(const bf::path& path, int flag) :
+
+	template<class pathtype>
+	cannyfs_dirreader(const pathtype& path, int flag) :
 		cannyfs_reader(path, flag)
 	{
 	}
@@ -570,7 +572,7 @@ private:
 	bool global;
 public:
 	template<class pathtype>
-	cannyfs_writer(const pathtype& path, int flag, long long eventId, bool dir = false) : eventId(eventId), global(path == "")
+	cannyfs_writer(const pathtype& path, int flag, long long eventId, bool dir = false) : eventId(eventId), global(strcmp(path.c_str(), "") == 0)
 	{
 		ensure_parent(path, eventId);
 
