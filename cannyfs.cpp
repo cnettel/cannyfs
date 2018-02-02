@@ -222,6 +222,14 @@ struct cannyfs_filehandle
 	{
 	}
 
+	const char* c_str() const
+	{
+		if (obj)
+			return obj->path.c_str();
+		else
+			return "";
+	}
+
 	~cannyfs_filehandle()
 	{
 		// We might want to report the error up
@@ -561,6 +569,7 @@ private:
 	long long eventId;
 	bool global;
 public:
+	template<class pathtype>
 	cannyfs_writer(const bf::path& path, int flag, long long eventId, bool dir = false) : eventId(eventId), global(path == "")
 	{
 		ensure_parent(path, eventId);
