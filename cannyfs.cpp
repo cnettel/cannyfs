@@ -494,8 +494,8 @@ private:
 	}
 
 public:
-
-	cannyfs_filedata* get(const bf::path& path, bool always, unique_lock<mutex>& lock, bool lockdata = false)
+	template<class pathtype>
+	cannyfs_filedata* get(const pathtype& path, bool always, unique_lock<mutex>& lock, bool lockdata = false)
 	{
 		cannyfs_filedata* result = get_filedata(path, always);
 		lock = unique_lock<mutex>(lockdata ? result->datalock : result->oplock);
