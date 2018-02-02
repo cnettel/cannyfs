@@ -514,14 +514,14 @@ const char* c_str(const char* const& path)
 	return path;
 }
 
-bf::path& get_path(const bf::path& path)
+const bf::path& get_path(const bf::path& path)
 {
 	return path;
 }
 
-bf::path& get_path(const cannyfs_filehandle handle)
+const bf::path& get_path(const cannyfs_filehandle& handle)
 {
-	return handle->obj.path;
+	return handle.obj.path;
 }
 
 struct cannyfs_reader
