@@ -216,9 +216,18 @@ struct cannyfs_filehandle
 	mutex lock;
 	int64_t fd;
 	condition_variable opened;
+	cannyfs_filedata* obj;
 
-	cannyfs_filehandle() : fd(-1)
+	cannyfs_filehandle() : fd(-1), obj(nullptr)
 	{
+	}
+
+	const char* c_str() const
+	{
+		if (obj)
+			return obj->path.c_str();
+		else
+			return "";
 	}
 
 	~cannyfs_filehandle()
@@ -340,14 +349,15 @@ public:
 	}
 } piper;
 
-fhstype::iterator getnewfh()
+fhstype::iterator getnewfh(cannyfs_filedat* obj)
 {
 	fhstype::iterator toreturn;
-	if (freefhs.pop(toreturn))
+	if (!freefhs.pop(toreturn))
 	{
-		return toreturn;
+		toreturn = fhs.grow_by(1);
 	}
-	return fhs.grow_by(1);
+	
+	toreturn->fileobj = obj;
 }
 
 cannyfs_filehandle* getcfh(int fd)
@@ -444,21 +454,24 @@ public:
 		}
 	}
 
-	cannyfs_filedata* get(const bf::path& path, bool always, unique_lock<mutex>& lock, bool lockdata = false)
+private:
+	cannyfs_filedata* get_filedata(const cannyfs_filehandle& fh)
+	{
+		return fh.obj;
+	}
+	
+	cannyfs_filedata* get_filedata(const bf::path& path, bool always)
 	{
 		cannyfs_filedata* result = nullptr;
-		auto locktransferline = [&] { lock = unique_lock<mutex>(lockdata ? result->datalock : result->oplock); };
-
 		bf::path normal_path = path.lexically_normal();
-
-		{			
+		{
 			shared_lock<shared_timed_mutex> maplock(this->lock);
 			auto i = data.find(normal_path);
 			if (i != data.end())
 			{
 				result = const_cast<cannyfs_filedata*>(&*i);
 				maplock.unlock();
-				locktransferline();
+
 			}
 		}
 
@@ -475,8 +488,17 @@ public:
 				result = const_cast<cannyfs_filedata*>(&(*data.emplace(normal_path).first));
 			}
 			maplock.unlock();
-			locktransferline();
 		}
+
+		return result;
+	}
+
+public:
+
+	cannyfs_filedata* get(const bf::path& path, bool always, unique_lock<mutex>& lock, bool lockdata = false)
+	{
+		cannyfs_filedata* result = get_filedata(path, always);
+		lock = unique_lock<mutex>(lockdata ? result->datalock : result->oplock);
 
 		return result;
 	}
@@ -487,7 +509,7 @@ struct cannyfs_reader
 public:
 	unique_lock<mutex> lock;
 	cannyfs_filedata* fileobj;
-	cannyfs_reader(const bf::path& path, int flag, long long targetEvent = numeric_limits<long long>::max())
+	template<class pathtype> cannyfs_reader(const pathtype& path, int flag, long long targetEvent = numeric_limits<long long>::max())
 	{
 		if (options.verbose) fprintf(stderr, "Waiting for reading %s, with flags %d\n", path.c_str(), flag);
 
@@ -547,6 +569,7 @@ private:
 	long long eventId;
 	bool global;
 public:
+	template<class pathtype>
 	cannyfs_writer(const bf::path& path, int flag, long long eventId, bool dir = false) : eventId(eventId), global(path == "")
 	{
 		ensure_parent(path, eventId);
@@ -688,7 +711,7 @@ int cannyfs_func_add_write(const char* funcname, bool defer, const std::string& 
 	if (options.verbose) fprintf(stderr, "Adding write %s (B) for %s\n", funcname, path.c_str());
 	fuse_file_info fi = *origfi;
 	return cannyfs_add_write_inner(defer, path, [path = string(path), fun, fi, funcname, dir](bool deferred, long long eventId)->int {
-		cannyfs_writer writer(path, LOCK_WHOLE, eventId, dir);
+		cannyfs_writer writer(getcfh(fi.fh), LOCK_WHOLE, eventId, dir);
 		return cannyfs_guarderror(deferred, funcname, path, fun(path, &fi));
 	});
 }
@@ -849,7 +872,7 @@ static int cannyfs_opendir(const char *path, struct fuse_file_info *fi)
 	d->offset = 0;
 	d->entry = NULL;
 
-	fi->fh = getnewfh() - fhs.begin();
+	fi->fh = getnewfh(b.fileobj) - fhs.begin();
 	getcfh(fi->fh)->setfh((unsigned long)d);
 	return 0;
 }
@@ -1184,14 +1207,14 @@ static int cannyfs_utimens(const char *cpath, const struct timespec ts[2])
 
 static int cannyfs_create(const char *cpath, mode_t mode, struct fuse_file_info *fi)
 {
-	if (options.verbose) fprintf(stderr, "Going to create %s with mode %d\n", cpath, (int) mode);
-	fi->fh = getnewfh() - fhs.begin();
+	if (options.verbose) fprintf(stderr, "Going to create %s with mode %d\n", cpath, (int) mode);	
 	{
 		cannyfs_reader b(cpath, NO_BARRIER | LOCK_WHOLE);
 		b.fileobj->stats.st_mode = mode | S_IFREG;
 		b.fileobj->created = true;
 		b.fileobj->missing = false;
-	}
+		fi->fh = getnewfh(b.fileobj) - fhs.begin();
+	}	
 
 	return cannyfs_add_write(options.eagercreate, cpath, fi, [mode](const std::string& path, const fuse_file_info* fi)
 	{
@@ -1212,13 +1235,13 @@ static int cannyfs_open(const char *path, struct fuse_file_info *fi)
 	if (options.verbose) fprintf(stderr, "Going to open %s\n", path);
 	int fd;
 
-	fi->fh = getnewfh() - fhs.begin();
+	fi->fh = getnewfh(b.fileobj) - fhs.begin();
 	fd = open(path, fi->flags);
 	if (fd == -1)
 		return -errno;
 	{
 		cannyfs_reader b2(path, NO_BARRIER);
-		b.fileobj->missing = false;
+		b2.fileobj->missing = false;
 	}
 
 	getcfh(fi->fh)->setfh(fd);
@@ -1347,7 +1370,7 @@ static int cannyfs_write_buf(const char *cpath, struct fuse_bufvec *buf,
 	}
 
 	{
-		cannyfs_reader b(cpath, NO_BARRIER);
+		cannyfs_reader b(cfh, NO_BARRIER);
 		off_t maybenewsize = (off_t)(offset + val);
 		update_maximum(b.fileobj->size, maybenewsize);
 	}
