@@ -521,7 +521,7 @@ const bf::path& get_path(const bf::path& path)
 
 const bf::path& get_path(const cannyfs_filehandle& handle)
 {
-	return handle.obj.path;
+	return handle.obj->path;
 }
 
 struct cannyfs_reader
