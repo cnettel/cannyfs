@@ -675,7 +675,7 @@ int cannyfs_add_write_inner(bool defer, const std::string_view path, auto&& fun)
 
 	fileobj->lastEventId = eventIdNow;
 
-	auto worker = [defer, eventIdNow, fun]() {
+	auto worker = [defer, eventIdNow, fun = std::move(fun)]() {
 		if (options.verbose) fprintf(stderr, "Doing event ID %lld\n", eventIdNow);
 		int retval = fun(defer, eventIdNow);
 		if (options.verbose) fprintf(stderr, "Did event ID %lld with result %d (total retired: %lld)\n", eventIdNow, retval, (long long) retiredCount);
@@ -735,7 +735,7 @@ int cannyfs_func_add_write(const char* funcname, bool defer, const std::string_v
 {
 	if (options.verbose) fprintf(stderr, "Adding write %s (B) for %s\n", funcname, path.c_str());
 	fuse_file_info fi = *origfi;
-	return cannyfs_add_write_inner(defer, path, [path = string(path), fun, fi, funcname, dir](bool deferred, long long eventId)->int {
+	return cannyfs_add_write_inner(defer, path, [path = string(path), fun = std::move(fun), fi, funcname, dir](bool deferred, long long eventId)->int {
 		cannyfs_writer writer(*getcfh(fi.fh), LOCK_WHOLE, eventId, dir);
 		return cannyfs_guarderror(deferred, funcname, path, fun(path, &fi));
 	});
@@ -745,7 +745,7 @@ template<class T, typename result_of<T(std::string, std::string)>::type = 0>
 int cannyfs_func_add_write(const char* funcname, bool defer, const std::string_view path1, const std::string_view path2, T&& fun, bool dir = false)
 {
 	if (options.verbose) fprintf(stderr, "Adding write %s (C) for %s\n", funcname, path1.c_str());
-	return cannyfs_add_write_inner(defer, path2, [path1 = string(path1), path2 = string(path2), fun, funcname, dir](bool deferred, long long eventId)->int {
+	return cannyfs_add_write_inner(defer, path2, [path1 = string(path1), path2 = string(path2), fun = std::move(fun), funcname, dir](bool deferred, long long eventId)->int {
 		//cannyfs_writer writer1(path1, LOCK_WHOLE, eventId);
 
 		// TODO: LOCKING MODEL MESSED UP
