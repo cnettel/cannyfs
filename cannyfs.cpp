@@ -269,6 +269,7 @@ private:
 	mutex lock;
 	condition_variable available;
 	int readyWorkers{ 0 };
+  int threadCount{ 0 };
 public:
 	void threadWorker()
 	{
@@ -292,13 +293,22 @@ public:
 
 	void add(cannyfs_filedata* dataToRun)
 	{
-		lock_guard<mutex> guard(lock);
-		toRun.push(dataToRun);
-		if (readyWorkers == 0)
+	  bool dospawn = false;
+	  {
+	    lock_guard<mutex> guard(lock);
+	    toRun.push(dataToRun);
+	    dospawn = readyWorkers == 0 && threadCount < 128;
+	    if (dospawn) threadCount += 16;
+	  }
+	  available.notify_one();
+
+	  if (dospawn)
+	    {
+	      for (int k = 0; k < 16; k++)
 		{
-			thread([this] { threadWorker(); }).detach();
+		  thread([this] { threadWorker(); }).detach();
 		}
-		available.notify_one();
+	    }
 	}
 } threads;
 
@@ -358,6 +368,8 @@ fhstype::iterator getnewfh(cannyfs_filedata* obj)
 	}
 	
 	toreturn->obj = obj;
+
+	return toreturn;
 }
 
 cannyfs_filehandle* getcfh(int fd)
@@ -498,7 +510,10 @@ public:
 	cannyfs_filedata* get(const pathtype& path, bool always, unique_lock<mutex>& lock, bool lockdata = false)
 	{
 		cannyfs_filedata* result = get_filedata(path, always);
-		lock = unique_lock<mutex>(lockdata ? result->datalock : result->oplock);
+		if (result)
+		  {
+		    lock = unique_lock<mutex>(lockdata ? result->datalock : result->oplock);
+		  }
 
 		return result;
 	}
@@ -1460,7 +1475,7 @@ static int cannyfs_release(const char *cpath, struct fuse_file_info *fi)
 		getcfh(fi->fh)->~cannyfs_filehandle();
 		// Reset object using default constructor
 		new(getcfh(fi->fh)) cannyfs_filehandle();
-		freefhs.push(fhs.begin() + fi->fh);
+		freefhs.push(fi->fh + fhs.begin());
 
 		return close(fd);
 	});
