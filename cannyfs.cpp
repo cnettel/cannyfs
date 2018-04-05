@@ -175,6 +175,7 @@ struct cannyfs_filedata
 	atomic_bool hastruestat{ false };
 	atomic_bool created{ false };
 	atomic_bool missing{ false };
+	atomic_bool parentok{ false };
 
   cannyfs_filedata(const string_view name) : path(name.begin(), name.end())
 	{
@@ -617,6 +618,26 @@ template<class T> void ensure_parent(T path, long long targetEvent = numeric_lim
 	}
 }
 
+template<class T> bool knowparentok(const T& path)
+{
+	return false;
+}
+
+template<> bool knowparentok(const cannyfs_filedata& path)
+{
+	return path.parentok;
+}
+
+template<class T> void setparentok(const T& path)
+{
+}
+
+template<> bool knowparentok(const cannyfs_filedata& path)
+{
+	path.parentok = true;
+}
+
+
 struct cannyfs_writer
 {
 private:
@@ -628,7 +649,12 @@ public:
 	template<class pathtype>
 	cannyfs_writer(const pathtype& path, int flag, long long eventId, bool dir = false) : eventId(eventId), global(strcmp(path.c_str(), "") == 0)
 	{
-		ensure_parent(get_path(path), eventId);
+		if (!knowparentok(path))
+		{
+			ensure_parent(get_path(path), eventId);
+			setparentok(path);
+		}
+
 
 		if (options.verbose) fprintf(stderr, "Entering write lock for %s\n", c_str(path));
 		fileobj = filemap.get(path, true, lock);
@@ -1066,6 +1092,7 @@ void rm_bookkeeping(const char* path)
 	cannyfs_reader b(parsedpath, NO_BARRIER);
 	b.fileobj->missing = true;
 	b.fileobj->created = false;
+	b.fileobj->parentok = false;
 	b.fileobj->size = 0;
 	cannyfs_reader bp(parsedpath.parent_path(), NO_BARRIER | LOCK_WHOLE);
 	bp.fileobj->removers.insert(b.fileobj);
