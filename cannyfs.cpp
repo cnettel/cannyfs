@@ -464,9 +464,8 @@ public:
 		if (now)
 		{
 			cerr << "[cannyfs] Initializing global file sync." << std::endl;
+			syncall(false);
 		}
-
-		syncall(false);
 	}
 
 private:
