@@ -465,6 +465,8 @@ public:
 		{
 			cerr << "[cannyfs] Initializing global file sync." << std::endl;
 		}
+
+		syncall(false);
 	}
 
 private:
@@ -690,7 +692,8 @@ void cannyfs_filedata::run()
 	running = false;
 }
 
-int cannyfs_add_write_inner(bool defer, const std::string_view path, auto&& fun)
+template<class pathtype>
+int cannyfs_add_write_inner(bool defer, const pathtype& path, auto&& fun)
 {
 	filemap.pollsync();
 
@@ -765,7 +768,7 @@ int cannyfs_func_add_write(const char* funcname, bool defer, const std::string_v
 {
   if (options.verbose) fprintf(stderr, "Adding write %s (B) for %s\n", funcname, string(path).c_str());
 	fuse_file_info fi = *origfi;
-	return cannyfs_add_write_inner(defer, path, [path = string(path), fun = std::move(fun), fi, funcname, dir](bool deferred, long long eventId)->int {
+	return cannyfs_add_write_inner(defer, *getcfh(fi.fh), [path = string(path), fun = std::move(fun), fi, funcname, dir](bool deferred, long long eventId)->int {
 		cannyfs_writer writer(*getcfh(fi.fh), LOCK_WHOLE, eventId, dir);
 		return cannyfs_guarderror(deferred, funcname, path, fun(path, &fi));
 	});
