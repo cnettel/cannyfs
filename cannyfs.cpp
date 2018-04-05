@@ -176,7 +176,7 @@ struct cannyfs_filedata
 	atomic_bool created{ false };
 	atomic_bool missing{ false };
 
-	cannyfs_filedata(const string_view name) : path(name)
+  cannyfs_filedata(const string_view name) : path(name.begin(), name.end())
 	{
 	}
 
@@ -506,6 +506,21 @@ private:
 		return result;
 	}
 
+  cannyfs_filedata* get_filedata(const std::string_view path, bool always)
+  {
+    return get_filedata(bf::path(path.begin(), path.end()), always);
+  }
+  
+    cannyfs_filedata* get_filedata(const std::string& path, bool always)
+  {
+    return get_filedata(bf::path(path.begin(), path.end()), always);
+  }
+
+      cannyfs_filedata* get_filedata(const char* path, bool always)
+  {
+    return get_filedata(std::string_view(path), always);
+  }
+
 public:
 	template<class pathtype>
 	cannyfs_filedata* get(const pathtype& path, bool always, unique_lock<mutex>& lock, bool lockdata = false)
@@ -738,7 +753,7 @@ int cannyfs_add_write_inner(bool defer, const std::string_view path, auto&& fun)
 template<class T, typename result_of<T(std::string)>::type = 0>
 int cannyfs_func_add_write(const char* funcname, bool defer, const std::string_view path, T&& fun, bool dir = false)
 {
-	if (options.verbose) fprintf(stderr, "Adding write %s (A) for %s\n", funcname, path.c_str());
+  if (options.verbose) fprintf(stderr, "Adding write %s (A) for %s\n", funcname, string(path).c_str());
 	return cannyfs_add_write_inner(defer, path, [path = string(path), fun, funcname, dir](bool deferred, long long eventId)->int {
 		cannyfs_writer writer(path, LOCK_WHOLE, eventId, dir);
 		return cannyfs_guarderror(deferred, funcname, path, fun(path));
@@ -748,7 +763,7 @@ int cannyfs_func_add_write(const char* funcname, bool defer, const std::string_v
 template<class T, typename result_of<T(std::string, fuse_file_info*)>::type = 0>
 int cannyfs_func_add_write(const char* funcname, bool defer, const std::string_view path, fuse_file_info* origfi, T&& fun, bool dir = false)
 {
-	if (options.verbose) fprintf(stderr, "Adding write %s (B) for %s\n", funcname, path.c_str());
+  if (options.verbose) fprintf(stderr, "Adding write %s (B) for %s\n", funcname, string(path).c_str());
 	fuse_file_info fi = *origfi;
 	return cannyfs_add_write_inner(defer, path, [path = string(path), fun = std::move(fun), fi, funcname, dir](bool deferred, long long eventId)->int {
 		cannyfs_writer writer(*getcfh(fi.fh), LOCK_WHOLE, eventId, dir);
@@ -759,7 +774,7 @@ int cannyfs_func_add_write(const char* funcname, bool defer, const std::string_v
 template<class T, typename result_of<T(std::string, std::string)>::type = 0>
 int cannyfs_func_add_write(const char* funcname, bool defer, const std::string_view path1, const std::string_view path2, T&& fun, bool dir = false)
 {
-	if (options.verbose) fprintf(stderr, "Adding write %s (C) for %s\n", funcname, path1.c_str());
+  if (options.verbose) fprintf(stderr, "Adding write %s (C) for %s\n", funcname, string(path1).c_str());
 	return cannyfs_add_write_inner(defer, path2, [path1 = string(path1), path2 = string(path2), fun = std::move(fun), funcname, dir](bool deferred, long long eventId)->int {
 		//cannyfs_writer writer1(path1, LOCK_WHOLE, eventId);
 
