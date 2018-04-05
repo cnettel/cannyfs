@@ -474,8 +474,9 @@ private:
 	{
 		return fh.obj;
 	}
-	
-	cannyfs_filedata* get_filedata(const bf::path& path, bool always)
+
+
+	cannyfs_filedata* get_filedata_inner(const bf::path& path, bool always)
 	{
 		cannyfs_filedata* result = nullptr;
 		bf::path normal_path = path.lexically_normal();
@@ -506,6 +507,24 @@ private:
 		}
 
 		return result;
+	}
+	
+	cannyfs_filedata* get_filedata(const bf::path& path, bool always)
+	{
+		thread_local string prevpath;
+		thread_local cannyfs_filedata* prevobj = nullptr;
+
+		if (prevobj != nullptr && path.native() == prevpath)
+		{
+			return prevobj;
+		}
+
+		cannyfs_filedata* result = get_filedata_inner(path, always);
+		if (result != nullptr)
+		{
+			prevpath = path;
+			prevobj = result;
+		}
 	}
 
   cannyfs_filedata* get_filedata(const std::string_view path, bool always)
