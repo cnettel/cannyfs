@@ -9,6 +9,8 @@ if your I/O subsystem has high latency (due to lots of I/O or being hosted somew
 makes a very high number of I/O requests, with a lot of flushing or writing to different files. Examples of this can be tasks that walk over
 complete directory trees, touching or writing to every file within them.
 
+Preprint paper (not currently submitted anywhere) with some benchmarks: https://arxiv.org/abs/1612.06830
+
 ## Intended usage mode
 
 1. Mount a directory with CannyFS, in non-demon mode to easily see error messages written to stderr.
