@@ -24,7 +24,9 @@
 
 #define FUSE_USE_VERSION 26
 
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 
 #ifdef HAVE_CONFIG_H
 #include <config.h>
@@ -177,7 +179,7 @@ struct cannyfs_filedata
 	atomic_bool missing{ false };
 	atomic_bool parentok{ false };
 
-  cannyfs_filedata(const string_view name) : path(name.begin(), name.end())
+  cannyfs_filedata(const std::string_view name) : path(name.begin(), name.end())
 	{
 	}
 
@@ -422,7 +424,7 @@ const int DIR_LOCK = 4;
 vector<cannyfs_closer> closes;
 
 struct comp {
-	bool operator()(const cannyfs_filedata& lhs, const cannyfs_filedata& rhs)
+	bool operator()(const cannyfs_filedata& lhs, const cannyfs_filedata& rhs) const
 	{
 		return lhs.path.native() < rhs.path.native();
 	}
@@ -522,7 +524,7 @@ private:
 		cannyfs_filedata* result = get_filedata_inner(path, always);
 		if (result != nullptr)
 		{
-			prevpath = path;
+			prevpath = path.string();
 			prevobj = result;
 		}
 	}
@@ -651,7 +653,7 @@ template<class T> void setparentok(const T& path)
 {
 }
 
-template<> bool knowparentok(const cannyfs_filedata& path)
+template<> void setparentok(const cannyfs_filedata& path)
 {
 	path.parentok = true;
 }
