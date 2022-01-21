@@ -273,17 +273,19 @@ private:
 	mutex lock;
 	condition_variable available;
 	int readyWorkers{ 0 };
-  int threadCount{ 0 };
+	int threadCount{ 0 };
+	atomic_bool done = false;
 public:
 	void threadWorker()
 	{
 		unique_lock<mutex> guard(lock);		
-		while (true)
+		while (!done)
 		{
 			while (!toRun.size())
 			{
 				readyWorkers++;
 				available.wait(guard);
+				if(done) return;
 				readyWorkers--;
 			}
 			cannyfs_filedata* what = toRun.front();
@@ -313,6 +315,12 @@ public:
 		  thread([this] { threadWorker(); }).detach();
 		}
 	    }
+	}
+
+	~cannyfs_threads()
+	{
+	  done = true;
+	  available.notify_all();
 	}
 } threads;
 
@@ -527,6 +535,7 @@ private:
 			prevpath = path.string();
 			prevobj = result;
 		}
+		return result;
 	}
 
   cannyfs_filedata* get_filedata(const std::string_view path, bool always)
